@@ -37,4 +37,6 @@ target_link_libraries(pronghorn
         ${WEBSOCKET_LIB}
         pthread
         OpenSSL::SSL
-        OpenSSL::Crypto)
+        OpenSSL::Crypto
+        tbb
+        tbbmalloc)

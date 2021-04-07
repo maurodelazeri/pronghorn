@@ -16,7 +16,7 @@ int main() {
 
 
     std::unique_ptr<Streaming> stream = std::make_unique<Streaming>();
-    stream->connect();
+    stream->start();
 
     sleep(1000);
 
