@@ -1,6 +1,6 @@
 #include <iostream>
 #include <spdlog/spdlog.h>
-
+#include "src/streaming.h"
 using namespace std;
 
 int main() {
@@ -13,6 +13,12 @@ int main() {
             "██      ██   ██ ██    ██ ██  ██ ██ ██    ██ ██   ██ ██    ██ ██   ██ ██  ██ ██ \n"
             "██      ██   ██  ██████  ██   ████  ██████  ██   ██  ██████  ██   ██ ██   ████ \n"
             "                                                                               \n";
+
+
+    std::unique_ptr<Streaming> stream = std::make_unique<Streaming>();
+    stream->connect();
+
+    sleep(1000);
 
     return 0;
 }
