@@ -42,10 +42,6 @@ void Streaming::start() {
     connect();
 }
 
-void Streaming::calculateSpotPrice(Quotes &quote) {
-
-}
-
 bool Streaming::load_active_pools() {
     try {
         rapidjson::Document document;
@@ -88,6 +84,13 @@ bool Streaming::load_active_pools() {
                 quote.processed_timestamp = data[i]["processed_timestamp"].GetInt64();
                 quote.transaction_hash = data[i]["transaction_hash"].GetString();
 
+                if (document.HasMember("virtual_price")) {
+                    quote.virtual_price = std::stod(data[i]["virtual_price"].GetString());
+                }
+                if (document.HasMember("virtual_price")) {
+                    quote.amplification = std::stoi(data[i]["amplification"].GetString());
+                }
+
                 const rapidjson::Value &tokens = data[i]["tokens"];
                 for (rapidjson::SizeType x = 0; x < tokens.Size(); x++) {
                     for (rapidjson::SizeType y = x + 1; y < tokens.Size(); y++) {
@@ -98,16 +101,32 @@ bool Streaming::load_active_pools() {
                         quote.token0Reserves = std::stod(tokens[x]["reserves"].GetString());
                         quote.token0Weight = std::stod(tokens[x]["weight"].GetString());
 
+                        if (quote.protocol == "CURVEFI") {
+                            quote.token0Price = quote.virtual_price;
+                        } else {
+                            quote.token0Price = calcSpotPrice(std::stod(tokens[x]["reserves"].GetString()),
+                                                              std::stod(tokens[x]["weight"].GetString()),
+                                                              std::stod(tokens[y]["reserves"].GetString()),
+                                                              std::stod(tokens[y]["weight"].GetString()));
+
+                        }
                         // Token 1
                         quote.token1Symbol = tokens[y]["symbol"].GetString();
                         quote.token1decimals = std::stoi(tokens[y]["decimals"].GetString());
                         quote.token1Address = tokens[y]["address"].GetString();
                         quote.token1Reserves = std::stod(tokens[y]["reserves"].GetString());
                         quote.token1Weight = std::stod(tokens[y]["weight"].GetString());
+
+                        if (quote.protocol == "CURVEFI") {
+                            quote.token1Price = quote.virtual_price;
+                        } else {
+                            quote.token1Price = calcSpotPrice(std::stod(tokens[y]["reserves"].GetString()),
+                                                              std::stod(tokens[y]["weight"].GetString()),
+                                                              std::stod(tokens[x]["reserves"].GetString()),
+                                                              std::stod(tokens[x]["weight"].GetString()));
+                        }
                     }
                 }
-
-                calculateSpotPrice(quote);
 
                 // Quotes
                 quotesTable::accessor quotes_assessor;

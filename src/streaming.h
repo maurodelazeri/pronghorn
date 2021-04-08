@@ -16,6 +16,7 @@
 #include "libs/misc/sole.h"
 #include "libs/ws_client/callback.h"
 #include "libs/ws_client/websocket_client.h"
+#include "libs/match.h"
 
 using namespace std;
 
@@ -26,6 +27,8 @@ struct Quotes {
     std::string symbol;
     std::string name;
     double swap_fee;
+    double virtual_price;
+    int64_t amplification;
     int64_t decimals;
     int64_t block_number;
     std::string transaction_hash;
@@ -66,7 +69,6 @@ private:
 
     bool load_active_pools();
 
-    void calculateSpotPrice(Quotes &quote);
 public:
     Streaming() : websocket_client(this, "ws-feed.pro.coinbase.com") {
         lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);

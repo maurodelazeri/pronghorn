@@ -29,7 +29,7 @@ include_directories(SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/src/libs/ws_client")
 file(GLOB_RECURSE GRAPH ${CMAKE_CURRENT_SOURCE_DIR}/src/libs/graph/*)
 include_directories(SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/src/libs/graph")
 
-set ( MISC src/streaming.cc src/streaming.h)
+set ( MISC src/streaming.cc src/streaming.h src/libs/match.h)
 
 add_executable(pronghorn main.cc ${WEBSOCKET_SRC} ${GRAPH} ${MISC})
 
