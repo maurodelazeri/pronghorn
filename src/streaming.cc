@@ -80,12 +80,7 @@ bool Streaming::load_active_pools() {
             const rapidjson::Value &data = document["data"];
             for (rapidjson::SizeType i = 0; i < data.Size(); i++) {
                 Quotes quote;
-                quotesTable::accessor quotes_assessor;
-                quotes_.find(quotes_assessor, data[i]["pool_id"].GetString());
-                if (quotes_assessor.empty()) {
-                    quotes_.insert(quotes_assessor, data[i]["pool_id"].GetString());
-                }
-
+                quote.id = sole::uuid4().str();
                 quote.poolID = data[i]["pool_id"].GetString();
                 quote.protocol = data[i]["protocol"].GetString();
                 quote.symbol = data[i]["symbol"].GetString();
@@ -96,25 +91,47 @@ bool Streaming::load_active_pools() {
                 quote.processed_timestamp = std::stoi(data[i]["processed_timestamp"].GetString());
                 quote.transaction_hash = data[i]["transaction_hash  "].GetString();
 
-                std::vector<double> spot_price = getSpotPrice(quote.protocol, std::vector<double>{
-                                                                      std::stod(data[i][0]["reserves"].GetString()), std::stod(data[i][1]["reserves"].GetString())},
-                                                              std::vector<double>{
-                                                                      std::stod(data[i][0]["weight"].GetString()),
-                                                                      std::stod(data[i][0]["weight"].GetString())});
+                const rapidjson::Value &tokens = data[i]["tokens"];
+                for (rapidjson::SizeType x = 0; x < tokens.Size(); x++) {
+                    for (rapidjson::SizeType y = x + 1; y < tokens.Size(); y++) {
+                        std::vector<double> spot_price = getSpotPrice(quote.protocol, std::vector<double>{
+                                                                              std::stod(data[i][x]["reserves"].GetString()),
+                                                                              std::stod(data[i][x]["reserves"].GetString())},
+                                                                      std::vector<double>{
+                                                                              std::stod(
+                                                                                      data[i][y]["weight"].GetString()),
+                                                                              std::stod(
+                                                                                      data[i][y]["weight"].GetString())});
 
-                // Token 0
-                quote.token0Symbol = data[i][0]["symbol"].GetString();
-                quote.token0decimals = std::stoi(data[i]["decimals"].GetString());
-                quote.token0Address = data[i][0]["address"].GetString();
-                quote.token0Price = spot_price[0];
+                        // Token 0
+                        quote.token0Symbol = data[i][x]["symbol"].GetString();
+                        quote.token0decimals = std::stoi(data[i][x]["decimals"].GetString());
+                        quote.token0Address = data[i][x]["address"].GetString();
+                        quote.token0Price = spot_price[x];
 
-                // Token 1
-                quote.token1Symbol = data[i][0]["symbol"].GetString();
-                quote.token1decimals = std::stoi(data[i]["decimals"].GetString());
-                quote.token1Address = data[i][0]["address"].GetString();
-                quote.token1Price = spot_price[0];
+                        // Token 1
+                        quote.token1Symbol = data[i][y]["symbol"].GetString();
+                        quote.token1decimals = std::stoi(data[i][y]["decimals"].GetString());
+                        quote.token1Address = data[i][y]["address"].GetString();
+                        quote.token1Price = spot_price[y];
+                    }
+                }
 
+                // Quotes
+                quotesTable::accessor quotes_assessor;
+                quotes_.find(quotes_assessor, quote.id);
+                if (quotes_assessor.empty()) {
+                    quotes_.insert(quotes_assessor, quote.id);
+                }
                 quotes_assessor->second = quote;
+
+                // Connections
+                connectionsTable::accessor connections_assessor;
+                connections_.find(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+                if (connections_assessor.empty()) {
+                    connections_.insert(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+                }
+                connections_assessor->second.emplace_back(quote);
             }
         } else {
             return false;

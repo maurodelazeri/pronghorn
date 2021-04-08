@@ -13,12 +13,14 @@
 #include <tbb/concurrent_hash_map.h>
 #include "libs/misc/httplib.h"
 #include "libs/misc/strings.h"
+#include "libs/misc/sole.h"
 #include "libs/ws_client/callback.h"
 #include "libs/ws_client/websocket_client.h"
 
 using namespace std;
 
 struct Quotes {
+    std::string id;
     std::string poolID;
     std::string protocol;
     std::string symbol;
@@ -39,6 +41,7 @@ struct Quotes {
 };
 
 typedef tbb::concurrent_hash_map<string, Quotes> quotesTable;
+typedef tbb::concurrent_hash_map<string, std::vector<Quotes>> connectionsTable;
 
 class Streaming : public websocket_client, public client_callback_t {
 private:
@@ -47,6 +50,7 @@ private:
     std::unique_ptr<httplib::SSLClient> http_request_;
 
     quotesTable quotes_;
+    connectionsTable connections_;
 
     void on_connected() override;
 
