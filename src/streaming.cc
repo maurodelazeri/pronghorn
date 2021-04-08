@@ -28,10 +28,12 @@ void Streaming::on_data(const char *data, size_t len, size_t remaining) {
     // Parse the JSON
     if (document.Parse(msg.c_str()).HasParseError()) {
         spdlog::error("Document parse error: {}", msg.c_str());
+        return;
     }
 
     if (!document.IsObject()) {
         spdlog::error("Error: {}", "No data");
+        return;
     }
 
 //    cout <<  utils::jsonFromDocument(document) << endl;
@@ -91,6 +93,11 @@ void Streaming::on_data(const char *data, size_t len, size_t remaining) {
                                                       std::stod(tokens[x]["weight"].GetString()));
                 }
             }
+        }
+
+        if (quote.token0Price <= 0 || quote.token1Price <=0){
+            spdlog::error("Error: prices are not valid {}", msg.c_str());
+            return;
         }
 
         // Quotes
