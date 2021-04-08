@@ -26,16 +26,20 @@ struct Quotes {
     std::string symbol;
     std::string name;
     double swap_fee;
-    int decimals;
-    int block_number;
+    int64_t decimals;
+    int64_t block_number;
     std::string transaction_hash;
-    int processed_timestamp;
+    int64_t processed_timestamp;
     std::string token0Symbol;
     std::string token1Symbol;
     std::string token0Address;
     std::string token1Address;
     int64_t token0decimals;
     int64_t token1decimals;
+    double token0Reserves;
+    double token1Reserves;
+    double token0Weight;
+    double token1Weight;
     double token0Price;
     double token1Price;
 };
@@ -62,7 +66,7 @@ private:
 
     bool load_active_pools();
 
-    std::vector<double> getSpotPrice(const std::string &protocol, const std::vector<double> &weights, const std::vector<double> &balances);
+    void calculateSpotPrice(Quotes &quote);
 public:
     Streaming() : websocket_client(this, "ws-feed.pro.coinbase.com") {
         lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);

@@ -42,11 +42,8 @@ void Streaming::start() {
     connect();
 }
 
-std::vector<double> Streaming::getSpotPrice(const std::string &protocol, const std::vector<double> &weights,
-                                            const std::vector<double> &balances) {
-    std::vector<double> spot_prices;
+void Streaming::calculateSpotPrice(Quotes &quote) {
 
-    return spot_prices;
 }
 
 bool Streaming::load_active_pools() {
@@ -87,35 +84,30 @@ bool Streaming::load_active_pools() {
                 quote.name = data[i]["name"].GetString();
                 quote.swap_fee = std::stod(data[i]["swap_fee"].GetString());
                 quote.decimals = std::stoi(data[i]["decimals"].GetString());
-                quote.block_number = std::stoi(data[i]["block_number"].GetString());
-                quote.processed_timestamp = std::stoi(data[i]["processed_timestamp"].GetString());
-                quote.transaction_hash = data[i]["transaction_hash  "].GetString();
+                quote.block_number = data[i]["block_number"].GetInt64();
+                quote.processed_timestamp = data[i]["processed_timestamp"].GetInt64();
+                quote.transaction_hash = data[i]["transaction_hash"].GetString();
 
                 const rapidjson::Value &tokens = data[i]["tokens"];
                 for (rapidjson::SizeType x = 0; x < tokens.Size(); x++) {
                     for (rapidjson::SizeType y = x + 1; y < tokens.Size(); y++) {
-                        std::vector<double> spot_price = getSpotPrice(quote.protocol, std::vector<double>{
-                                                                              std::stod(data[i][x]["reserves"].GetString()),
-                                                                              std::stod(data[i][x]["reserves"].GetString())},
-                                                                      std::vector<double>{
-                                                                              std::stod(
-                                                                                      data[i][y]["weight"].GetString()),
-                                                                              std::stod(
-                                                                                      data[i][y]["weight"].GetString())});
-
                         // Token 0
-                        quote.token0Symbol = data[i][x]["symbol"].GetString();
-                        quote.token0decimals = std::stoi(data[i][x]["decimals"].GetString());
-                        quote.token0Address = data[i][x]["address"].GetString();
-                        quote.token0Price = spot_price[x];
+                        quote.token0Symbol = tokens[x]["symbol"].GetString();
+                        quote.token0decimals = std::stoi(tokens[x]["decimals"].GetString());
+                        quote.token0Address = tokens[x]["address"].GetString();
+                        quote.token0Reserves = std::stod(tokens[x]["reserves"].GetString());
+                        quote.token0Weight = std::stod(tokens[x]["weight"].GetString());
 
                         // Token 1
-                        quote.token1Symbol = data[i][y]["symbol"].GetString();
-                        quote.token1decimals = std::stoi(data[i][y]["decimals"].GetString());
-                        quote.token1Address = data[i][y]["address"].GetString();
-                        quote.token1Price = spot_price[y];
+                        quote.token1Symbol = tokens[y]["symbol"].GetString();
+                        quote.token1decimals = std::stoi(tokens[y]["decimals"].GetString());
+                        quote.token1Address = tokens[y]["address"].GetString();
+                        quote.token1Reserves = std::stod(tokens[y]["reserves"].GetString());
+                        quote.token1Weight = std::stod(tokens[y]["weight"].GetString());
                     }
                 }
+
+                calculateSpotPrice(quote);
 
                 // Quotes
                 quotesTable::accessor quotes_assessor;
@@ -127,6 +119,12 @@ bool Streaming::load_active_pools() {
 
                 // Connections
                 connectionsTable::accessor connections_assessor;
+                connections_.find(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+                if (connections_assessor.empty()) {
+                    connections_.insert(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+                }
+                connections_assessor->second.emplace_back(quote);
+
                 connections_.find(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
                 if (connections_assessor.empty()) {
                     connections_.insert(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
