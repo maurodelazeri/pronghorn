@@ -23,6 +23,10 @@ void Streaming::on_error(const char *msg, size_t len) {
 void Streaming::on_data(const char *data, size_t len, size_t remaining) {
     std::string msg(data, len);
 
+    if (system_debug_) {
+        lwsl_user("data from server: %s\n", msg.c_str());
+    }
+    
     rapidjson::Document document;
 
     // Parse the JSON
@@ -122,8 +126,6 @@ void Streaming::on_data(const char *data, size_t len, size_t remaining) {
         }
         connections_assessor->second.emplace_back(quote);
     }
-
-    lwsl_user("data from server: %s\n", msg.c_str());
 }
 
 void Streaming::start() {
