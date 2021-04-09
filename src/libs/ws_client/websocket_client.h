@@ -22,7 +22,7 @@ class websocket_client {
     std::string address_;
     std::string origin_;
     std::string path_;
-    int16_t port_ = -1;
+    int port_ = -1;
 
 public:
     websocket_client(client_callback_t *callback,

@@ -146,11 +146,13 @@ void Streaming::start() {
     // Websocket
     //connect();
 
-    load_active_pools(1000);
-
-    cout << "DONE" << endl;
-
-    //runCycle();
+    while (true) {
+        auto elapsed = make_unique<Elapsed>("Arb Cycle");
+        quotes_.clear();
+        connections_.clear();
+        load_active_pools();
+        runCycle();
+    }
 
     rungWebServer();
 }
@@ -388,24 +390,20 @@ void Streaming::runCycle() {
             }
 
             cout << output << endl;
+            //sleep(5);
         } else {
             cout << "No negative cycle" << endl;
         }
     }
 }
 
-bool Streaming::load_active_pools(const int64_t &limit) {
+bool Streaming::load_active_pools() {
     try {
 
         int64_t cursor = -1;
-
         while (cursor != 0) {
             if (cursor == -1) {
                 cursor = 0;
-            }
-
-            if (quotes_.size() > limit) {
-                break;
             }
 
             cout << "Loading data, cursor at:" << cursor << endl;
@@ -493,6 +491,10 @@ bool Streaming::load_active_pools(const int64_t &limit) {
                                                                   std::stod(tokens[x]["weight"].GetString()));
                             }
                         }
+                    }
+
+                    if (quote.protocol == "PANCAKESWAP") {
+                        continue;
                     }
 
                     // Quotes

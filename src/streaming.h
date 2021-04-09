@@ -15,6 +15,7 @@
 #include "libs/misc/strings.h"
 #include "libs/misc/system.h"
 #include "libs/misc/sole.h"
+#include "libs/misc/elapsed.h"
 #include "libs/ws_client/callback.h"
 #include "libs/ws_client/websocket_client.h"
 #include "libs/match.h"
@@ -86,7 +87,7 @@ private:
 
     void on_data(const char *data, size_t len, size_t remaining) override;
 
-    bool load_active_pools(const int64_t &limit);
+    bool load_active_pools();
 
     void runCycle();
 
