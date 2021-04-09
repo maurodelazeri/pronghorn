@@ -393,7 +393,7 @@ bool Streaming::load_active_pools() {
                         }
                     }
 
-                    if (quote.protocol == "PANCAKESWAP") {
+                    if (quote.protocol != "PANCAKESWAP") {
                         continue;
                     }
 
