@@ -10,6 +10,5 @@ struct Asset {
     std::string exchange{};
     std::string symbol{};
     std::string address{};
-    std::string exchange_symbol{};
     int64_t decimals{};
 };
