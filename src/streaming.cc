@@ -4,6 +4,10 @@
 
 #include "streaming.h"
 
+Streaming::Streaming() : websocket_client(this, "wss.zinnion.com") {
+    lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
+}
+
 Streaming::~Streaming() {}
 
 void Streaming::on_connected() {
@@ -93,33 +97,38 @@ void Streaming::on_data(const char *data, size_t len, size_t remaining) {
             }
         }
 
-        if (quote.token0Price <= 0 || quote.token1Price <=0){
+        if (quote.token0Price <= 0 || quote.token1Price <= 0) {
             spdlog::error("Error: prices are not valid {}", msg.c_str());
             return;
         }
 
         // Quotes
-        quotesTable::accessor quotes_assessor;
-        quotes_.find(quotes_assessor, quote.id);
-        if (quotes_assessor.empty()) {
-            quotes_.insert(quotes_assessor, quote.id);
+        {
+            quotesTable::accessor quotes_assessor;
+            quotes_.find(quotes_assessor, quote.id);
+            if (quotes_assessor.empty()) {
+                quotes_.insert(quotes_assessor, quote.id);
+            }
+            quotes_assessor->second = quote;
         }
-        quotes_assessor->second = quote;
 
         // Connections
-        connectionsTable::accessor connections_assessor1;
-        connections_.find(connections_assessor1, quote.protocol + "-" + quote.token0Symbol);
-        if (connections_assessor1.empty()) {
-            connections_.insert(connections_assessor1, quote.protocol + "-" + quote.token0Symbol);
+        {
+            connectionsTable::accessor connections_assessor;
+            connections_.find(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+            if (connections_assessor.empty()) {
+                connections_.insert(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+            }
+            connections_assessor->second.emplace_back(quote);
         }
-        connections_assessor1->second.emplace_back(quote);
-
-        connectionsTable::accessor connections_assessor2;
-        connections_.find(connections_assessor2, quote.protocol + "-" + quote.token1Symbol);
-        if (connections_assessor2.empty()) {
-            connections_.insert(connections_assessor2, quote.protocol + "-" + quote.token1Symbol);
+        {
+            connectionsTable::accessor connections_assessor;
+            connections_.find(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+            if (connections_assessor.empty()) {
+                connections_.insert(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+            }
+            connections_assessor->second.emplace_back(quote);
         }
-        connections_assessor2->second.emplace_back(quote);
     }
 }
 
@@ -135,9 +144,11 @@ void Streaming::start() {
     http_request_->set_connection_timeout(15);
 
     // Websocket
-    connect();
+    //connect();
 
-    //load_active_pools();
+    load_active_pools(1000);
+
+    cout << "DONE" << endl;
 
     //runCycle();
 
@@ -206,80 +217,87 @@ void Streaming::rungWebServer() {
 void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
                                          std::unordered_map<std::string, int> &seq_mapping) {
 
-    std::unordered_map<std::string, bool> connections_mapping;
+    try {
+        std::unordered_map<std::string, bool> connections_mapping;
 
-    for (auto const &[_, data] : quotes_) {
+        for (auto const &[_, data] : quotes_) {
+            {
+                connectionsTable::accessor connections_assessor1;
+                connections_.find(connections_assessor1, data.protocol + "-" + data.token0Symbol);
 
-        connectionsTable::accessor connections_assessor1;
-        connections_.find(connections_assessor1, data.protocol + "-" + data.token0Symbol);
+                for (auto const &x : connections_assessor1->second) {
+                    std::string key;
+                    key.append(x.token0Symbol).append("-").append(x.token1Symbol).append("-").append(x.id);
+                    if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
 
-        for (auto const &x : connections_assessor1->second) {
-            std::string key;
-            key.append(x.token0Symbol).append("-").append(x.token1Symbol).append("-").append(x.id);
-            if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
+                        Asset asset_0;
+                        asset_0.quoteId = x.id;
+                        asset_0.symbol = x.token0Symbol;
+                        asset_0.address = x.token0Address;
+                        asset_0.exchange = x.protocol;
+                        asset_0.exchange_symbol = x.protocol + "-" + x.token0Symbol;
+                        asset_0.poolID = x.poolID;
+                        asset_0.decimals = x.token0decimals;
 
-                Asset asset_0;
-                asset_0.quoteId = x.id;
-                asset_0.symbol = x.token0Symbol;
-                asset_0.address = x.token0Address;
-                asset_0.exchange = x.protocol;
-                asset_0.exchange_symbol = x.protocol + "-" + x.token0Symbol;
-                asset_0.poolID = x.poolID;
-                asset_0.decimals = x.token0decimals;
+                        Asset asset_1;
+                        asset_1.quoteId = x.id;
+                        asset_1.symbol = x.token1Symbol;
+                        asset_1.address = x.token1Address;
+                        asset_1.exchange = x.protocol;
+                        asset_1.exchange_symbol = x.protocol + "-" + x.token1Symbol;
+                        asset_1.poolID = x.poolID;
+                        asset_1.decimals = x.token1decimals;
 
-                Asset asset_1;
-                asset_1.quoteId = x.id;
-                asset_1.symbol = x.token1Symbol;
-                asset_1.address = x.token1Address;
-                asset_1.exchange = x.protocol;
-                asset_1.exchange_symbol = x.protocol + "-" + x.token1Symbol;
-                asset_1.poolID = x.poolID;
-                asset_1.decimals = x.token1decimals;
+                        connections_mapping[key] = true;
 
-                connections_mapping[key] = true;
+                        auto *e = new DirectedEdge(seq_mapping[x.token1Symbol],
+                                                   seq_mapping[x.token0Symbol],
+//                                               x.token0Price, asset_1, asset_0);
+                                                   -std::log(x.token0Price), asset_1, asset_0);
+                        directedEdge.emplace_back(e);
+                    }
+                }
+            }
 
-                auto *e = new DirectedEdge(seq_mapping[x.token1Symbol],
-                                           seq_mapping[x.token0Symbol],
-                                           x.token0Price, asset_1, asset_0);
-//                                           -std::log(x.token0Price), asset_1, asset_0);
-                directedEdge.emplace_back(e);
+            {
+                connectionsTable::accessor connections_assessor2;
+                connections_.find(connections_assessor2, data.protocol + "-" + data.token1Symbol);
+                for (auto const &x : connections_assessor2->second) {
+                    std::string key;
+                    key.append(x.token1Symbol).append("-").append(x.token0Symbol).append("-").append(x.id);
+                    if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
+
+                        Asset asset_0;
+                        asset_0.quoteId = x.id;
+                        asset_0.symbol = x.token0Symbol;
+                        asset_0.address = x.token0Address;
+                        asset_0.exchange = x.protocol;
+                        asset_0.exchange_symbol = x.protocol + "-" + x.token0Symbol;
+                        asset_0.poolID = x.poolID;
+                        asset_0.decimals = x.token0decimals;
+
+                        Asset asset_1;
+                        asset_1.quoteId = x.id;
+                        asset_1.symbol = x.token1Symbol;
+                        asset_1.address = x.token1Address;
+                        asset_1.exchange = x.protocol;
+                        asset_1.exchange_symbol = x.protocol + "-" + x.token1Symbol;
+                        asset_1.poolID = x.poolID;
+                        asset_1.decimals = x.token1decimals;
+
+                        connections_mapping[key] = true;
+
+                        auto *e = new DirectedEdge(seq_mapping[x.token0Symbol],
+                                                   seq_mapping[x.token1Symbol],
+//                                               x.token1Price, asset_0, asset_1);
+                                                   -std::log(x.token1Price), asset_0, asset_1);
+                        directedEdge.emplace_back(e);
+                    }
+                }
             }
         }
-
-        connectionsTable::accessor connections_assessor2;
-        connections_.find(connections_assessor2, data.protocol + "-" + data.token1Symbol);
-        for (auto const &x : connections_assessor2->second) {
-            std::string key;
-            key.append(x.token1Symbol).append("-").append(x.token0Symbol).append("-").append(x.id);
-            if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
-
-                Asset asset_0;
-                asset_0.quoteId = x.id;
-                asset_0.symbol = x.token0Symbol;
-                asset_0.address = x.token0Address;
-                asset_0.exchange = x.protocol;
-                asset_0.exchange_symbol = x.protocol + "-" + x.token0Symbol;
-                asset_0.poolID = x.poolID;
-                asset_0.decimals = x.token0decimals;
-
-                Asset asset_1;
-                asset_1.quoteId = x.id;
-                asset_1.symbol = x.token1Symbol;
-                asset_1.address = x.token1Address;
-                asset_1.exchange = x.protocol;
-                asset_1.exchange_symbol = x.protocol + "-" + x.token1Symbol;
-                asset_1.poolID = x.poolID;
-                asset_1.decimals = x.token1decimals;
-
-                connections_mapping[key] = true;
-
-                auto *e = new DirectedEdge(seq_mapping[x.token0Symbol],
-                                           seq_mapping[x.token1Symbol],
-                                           x.token1Price, asset_0, asset_1);
-//                                           -std::log(x.token1Price), asset_0, asset_1);
-                directedEdge.emplace_back(e);
-            }
-        }
+    } catch (std::exception &e) {
+        spdlog::error("buildEdgeWeightedDigraph error: {}", e.what());
     }
 }
 
@@ -293,14 +311,16 @@ void Streaming::runCycle() {
 
     // Map unique symbols across all platforms
     int position = 0;
-    for (auto &connection : connections_) {
-        // remove the exchange, we want only the symbol
-        std::string symbol = connection.first;
-        size_t pos = symbol.find('-');
-        symbol.erase(0, pos + 1);
-        if (seq_mapping.count(symbol) == 0) {
-            seq_mapping[symbol] = position;
-            position++;
+    {
+        for (auto &connection : connections_) {
+            // remove the exchange, we want only the symbol
+            std::string symbol = connection.first;
+            size_t pos = symbol.find('-');
+            symbol.erase(0, pos + 1);
+            if (seq_mapping.count(symbol) == 0) {
+                seq_mapping[symbol] = position;
+                position++;
+            }
         }
     }
 
@@ -374,116 +394,137 @@ void Streaming::runCycle() {
     }
 }
 
-bool Streaming::load_active_pools() {
+bool Streaming::load_active_pools(const int64_t &limit) {
     try {
-        rapidjson::Document document;
 
-        std::string url = "/v1/active-pools/all/0/10";
-        auto res = http_request_->Get(url.c_str());
-        if (res == nullptr) {
-            spdlog::error("Error: {}", "nullptr");
-            return false;
-        }
+        int64_t cursor = -1;
 
-        if (res.error()) {
-            spdlog::error("Error: {}", res.error());
-            return false;
-        }
+        while (cursor != 0) {
+            if (cursor == -1) {
+                cursor = 0;
+            }
 
-        // Parse the JSON
-        if (document.Parse(res->body.c_str()).HasParseError()) {
-            spdlog::error("Document parse error: {}", res->body.c_str());
-            return false;
-        }
+            if (quotes_.size() > limit) {
+                break;
+            }
 
-        if (!document.IsObject()) {
-            spdlog::error("Error: {}", "No data");
-            return false;
-        }
+            cout << "Loading data, cursor at:" << cursor << endl;
 
-        if (document.HasMember("data")) {
-            const rapidjson::Value &data = document["data"];
-            for (rapidjson::SizeType i = 0; i < data.Size(); i++) {
-                Quotes quote;
-                quote.id = sole::uuid4().str();
-                quote.poolID = data[i]["pool_id"].GetString();
-                quote.protocol = data[i]["protocol"].GetString();
-                quote.symbol = data[i]["symbol"].GetString();
-                quote.name = data[i]["name"].GetString();
-                quote.swap_fee = std::stod(data[i]["swap_fee"].GetString());
-                quote.decimals = std::stoi(data[i]["decimals"].GetString());
-                quote.block_number = data[i]["block_number"].GetInt64();
-                quote.processed_timestamp = data[i]["processed_timestamp"].GetInt64();
-                quote.transaction_hash = data[i]["transaction_hash"].GetString();
+            rapidjson::Document document;
+            std::string url = "/v1/active-pools/all/" + to_string(cursor) + "/1000";
+            auto res = http_request_->Get(url.c_str());
+            if (res == nullptr) {
+                spdlog::error("Error: {}", "nullptr");
+                break;
+            }
 
-                if (document.HasMember("virtual_price")) {
-                    quote.virtual_price = std::stod(data[i]["virtual_price"].GetString());
-                }
-                if (document.HasMember("virtual_price")) {
-                    quote.amplification = std::stoi(data[i]["amplification"].GetString());
-                }
+            if (res.error()) {
+                spdlog::error("Error: {}", res.error());
+                break;
+            }
 
-                const rapidjson::Value &tokens = data[i]["tokens"];
-                for (rapidjson::SizeType x = 0; x < tokens.Size(); x++) {
-                    for (rapidjson::SizeType y = x + 1; y < tokens.Size(); y++) {
-                        // Token 0
-                        quote.token0Symbol = tokens[x]["symbol"].GetString();
-                        quote.token0decimals = std::stoi(tokens[x]["decimals"].GetString());
-                        quote.token0Address = tokens[x]["address"].GetString();
-                        quote.token0Reserves = std::stod(tokens[x]["reserves"].GetString());
-                        quote.token0Weight = std::stod(tokens[x]["weight"].GetString());
+            // Parse the JSON
+            if (document.Parse(res->body.c_str()).HasParseError()) {
+                spdlog::error("Document parse error: {}", res->body.c_str());
+                break;
+            }
 
-                        if (quote.protocol == "CURVEFI") {
-                            quote.token0Price = quote.virtual_price;
-                        } else {
-                            quote.token0Price = calcSpotPrice(std::stod(tokens[x]["reserves"].GetString()),
-                                                              std::stod(tokens[x]["weight"].GetString()),
-                                                              std::stod(tokens[y]["reserves"].GetString()),
-                                                              std::stod(tokens[y]["weight"].GetString()));
+            if (!document.IsObject()) {
+                spdlog::error("Error: {}", "No data");
+                break;
+            }
 
-                        }
-                        // Token 1
-                        quote.token1Symbol = tokens[y]["symbol"].GetString();
-                        quote.token1decimals = std::stoi(tokens[y]["decimals"].GetString());
-                        quote.token1Address = tokens[y]["address"].GetString();
-                        quote.token1Reserves = std::stod(tokens[y]["reserves"].GetString());
-                        quote.token1Weight = std::stod(tokens[y]["weight"].GetString());
+            if (document.HasMember("data")) {
+                cursor = document["next_cursor"].GetInt64();
 
-                        if (quote.protocol == "CURVEFI") {
-                            quote.token1Price = quote.virtual_price;
-                        } else {
-                            quote.token1Price = calcSpotPrice(std::stod(tokens[y]["reserves"].GetString()),
-                                                              std::stod(tokens[y]["weight"].GetString()),
-                                                              std::stod(tokens[x]["reserves"].GetString()),
-                                                              std::stod(tokens[x]["weight"].GetString()));
+                const rapidjson::Value &data = document["data"];
+                for (rapidjson::SizeType i = 0; i < data.Size(); i++) {
+                    Quotes quote;
+                    quote.id = sole::uuid4().str();
+                    quote.poolID = data[i]["pool_id"].GetString();
+                    quote.protocol = data[i]["protocol"].GetString();
+                    quote.symbol = data[i]["symbol"].GetString();
+                    quote.name = data[i]["name"].GetString();
+                    quote.swap_fee = std::stod(data[i]["swap_fee"].GetString());
+                    quote.decimals = std::stoi(data[i]["decimals"].GetString());
+                    quote.block_number = data[i]["block_number"].GetInt64();
+                    quote.processed_timestamp = data[i]["processed_timestamp"].GetInt64();
+                    quote.transaction_hash = data[i]["transaction_hash"].GetString();
+
+                    if (document.HasMember("virtual_price")) {
+                        quote.virtual_price = std::stod(data[i]["virtual_price"].GetString());
+                    }
+                    if (document.HasMember("virtual_price")) {
+                        quote.amplification = std::stoi(data[i]["amplification"].GetString());
+                    }
+
+                    const rapidjson::Value &tokens = data[i]["tokens"];
+                    for (rapidjson::SizeType x = 0; x < tokens.Size(); x++) {
+                        for (rapidjson::SizeType y = x + 1; y < tokens.Size(); y++) {
+                            // Token 0
+                            quote.token0Symbol = tokens[x]["symbol"].GetString();
+                            quote.token0decimals = std::stoi(tokens[x]["decimals"].GetString());
+                            quote.token0Address = tokens[x]["address"].GetString();
+                            quote.token0Reserves = std::stod(tokens[x]["reserves"].GetString());
+                            quote.token0Weight = std::stod(tokens[x]["weight"].GetString());
+
+                            if (quote.protocol == "CURVEFI") {
+                                quote.token0Price = quote.virtual_price;
+                            } else {
+                                quote.token0Price = calcSpotPrice(std::stod(tokens[x]["reserves"].GetString()),
+                                                                  std::stod(tokens[x]["weight"].GetString()),
+                                                                  std::stod(tokens[y]["reserves"].GetString()),
+                                                                  std::stod(tokens[y]["weight"].GetString()));
+
+                            }
+                            // Token 1
+                            quote.token1Symbol = tokens[y]["symbol"].GetString();
+                            quote.token1decimals = std::stoi(tokens[y]["decimals"].GetString());
+                            quote.token1Address = tokens[y]["address"].GetString();
+                            quote.token1Reserves = std::stod(tokens[y]["reserves"].GetString());
+                            quote.token1Weight = std::stod(tokens[y]["weight"].GetString());
+
+                            if (quote.protocol == "CURVEFI") {
+                                quote.token1Price = quote.virtual_price;
+                            } else {
+                                quote.token1Price = calcSpotPrice(std::stod(tokens[y]["reserves"].GetString()),
+                                                                  std::stod(tokens[y]["weight"].GetString()),
+                                                                  std::stod(tokens[x]["reserves"].GetString()),
+                                                                  std::stod(tokens[x]["weight"].GetString()));
+                            }
                         }
                     }
-                }
 
-                // Quotes
-                quotesTable::accessor quotes_assessor;
-                quotes_.find(quotes_assessor, quote.id);
-                if (quotes_assessor.empty()) {
-                    quotes_.insert(quotes_assessor, quote.id);
+                    // Quotes
+                    {
+                        quotesTable::accessor quotes_assessor;
+                        quotes_.find(quotes_assessor, quote.id);
+                        if (quotes_assessor.empty()) {
+                            quotes_.insert(quotes_assessor, quote.id);
+                        }
+                        quotes_assessor->second = quote;
+                    }
+                    // Connections
+                    {
+                        connectionsTable::accessor connections_assessor;
+                        connections_.find(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+                        if (connections_assessor.empty()) {
+                            connections_.insert(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+                        }
+                        connections_assessor->second.emplace_back(quote);
+                    }
+                    {
+                        connectionsTable::accessor connections_assessor;
+                        connections_.find(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+                        if (connections_assessor.empty()) {
+                            connections_.insert(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+                        }
+                        connections_assessor->second.emplace_back(quote);
+                    }
                 }
-                quotes_assessor->second = quote;
-
-                // Connections
-                connectionsTable::accessor connections_assessor;
-                connections_.find(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
-                if (connections_assessor.empty()) {
-                    connections_.insert(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
-                }
-                connections_assessor->second.emplace_back(quote);
-
-                connections_.find(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
-                if (connections_assessor.empty()) {
-                    connections_.insert(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
-                }
-                connections_assessor->second.emplace_back(quote);
+            } else {
+                break;
             }
-        } else {
-            return false;
         }
         return true;
     } catch (std::exception &e) {

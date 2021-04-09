@@ -86,15 +86,13 @@ private:
 
     void on_data(const char *data, size_t len, size_t remaining) override;
 
-    bool load_active_pools();
+    bool load_active_pools(const int64_t &limit);
 
     void runCycle();
 
     void buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge, std::unordered_map<std::string, int> &seq_mapping);
 public:
-    Streaming() : websocket_client(this, "wss.zinnion.com") {
-        lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
-    }
+    Streaming();
 
     ~Streaming();
 
