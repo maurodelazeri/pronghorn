@@ -26,21 +26,15 @@ void Streaming::on_data(const char *data, size_t len, size_t remaining) {
     if (system_debug_) {
         lwsl_user("data from server: %s\n", msg.c_str());
     }
-    
     rapidjson::Document document;
-
-    // Parse the JSON
     if (document.Parse(msg.c_str()).HasParseError()) {
         spdlog::error("Document parse error: {}", msg.c_str());
         return;
     }
-
     if (!document.IsObject()) {
         spdlog::error("Error: {}", "No data");
         return;
     }
-
-//    cout <<  utils::jsonFromDocument(document) << endl;
 
     if (document.HasMember("type")) {
         Quotes quote;
@@ -113,18 +107,19 @@ void Streaming::on_data(const char *data, size_t len, size_t remaining) {
         quotes_assessor->second = quote;
 
         // Connections
-        connectionsTable::accessor connections_assessor;
-        connections_.find(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
-        if (connections_assessor.empty()) {
-            connections_.insert(connections_assessor, quote.protocol + "-" + quote.token0Symbol);
+        connectionsTable::accessor connections_assessor1;
+        connections_.find(connections_assessor1, quote.protocol + "-" + quote.token0Symbol);
+        if (connections_assessor1.empty()) {
+            connections_.insert(connections_assessor1, quote.protocol + "-" + quote.token0Symbol);
         }
-        connections_assessor->second.emplace_back(quote);
+        connections_assessor1->second.emplace_back(quote);
 
-        connections_.find(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
-        if (connections_assessor.empty()) {
-            connections_.insert(connections_assessor, quote.protocol + "-" + quote.token1Symbol);
+        connectionsTable::accessor connections_assessor2;
+        connections_.find(connections_assessor2, quote.protocol + "-" + quote.token1Symbol);
+        if (connections_assessor2.empty()) {
+            connections_.insert(connections_assessor2, quote.protocol + "-" + quote.token1Symbol);
         }
-        connections_assessor->second.emplace_back(quote);
+        connections_assessor2->second.emplace_back(quote);
     }
 }
 

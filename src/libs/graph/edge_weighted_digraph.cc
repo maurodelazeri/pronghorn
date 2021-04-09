@@ -79,8 +79,8 @@ EdgeWeightedDigraph::EdgeWeightedDigraph(int V, int E) : EdgeWeightedDigraph(V) 
         int v = dis(_gen);
         int w = dis(_gen);
         double weight = 0.01 * dis100(_gen);
-   //     DirectedEdge *e = new DirectedEdge(v, w, weight);
-   //     addEdge(e);
+        //     DirectedEdge *e = new DirectedEdge(v, w, weight);
+        //     addEdge(e);
     }
 }
 
@@ -123,7 +123,7 @@ EdgeWeightedDigraph::EdgeWeightedDigraph(fstream &in) : _gen(_rd()) {
 
         str = end;
         double weight = std::strtod(str, &end);
-    //    addEdge(new DirectedEdge(v, w, weight));
+        //    addEdge(new DirectedEdge(v, w, weight));
     }
 }
 
@@ -228,7 +228,7 @@ vector<DirectedEdge *> EdgeWeightedDigraph::edges() const {
  *         followed by the <em>V</em> adjacency lists of edges
  */
 string EdgeWeightedDigraph::toString() const {
-    string s = "Vertices: "+ std::to_string(VV) + " Edges: " + std::to_string(EE) + "\n";
+    string s = "Vertices: " + std::to_string(VV) + " Edges: " + std::to_string(EE) + "\n";
     for (int v = 0; v < VV; v++) {
         s += std::to_string(v) + ": ";
         for (DirectedEdge *e : _adj[v]) s += e->toString() + "  ";
@@ -250,7 +250,7 @@ string EdgeWeightedDigraph::getGraphviz() const {
     s.append("\tnode [shape = circle];\n\n");
     for (int v = 0; v < VV; v++) {
         s.append("\t");
-        s.append("\""+ _adj[0][0]->asset_from().symbol+"\"");
+        s.append("\"" + _adj[0][0]->asset_from().symbol + "\"");
         if (v == 0) {
             s.append(" [style=filled fillcolor=orange fontcolor=black];\n");
         } else {
@@ -261,7 +261,8 @@ string EdgeWeightedDigraph::getGraphviz() const {
             s.append("\"" + e->asset_from().symbol + "\"");
             s.append(" -> ");
             s.append("\"" + e->asset_to().symbol + "\"");
-            s.append("[label = \"" + std::to_string(e->weight()) +"_"+e->asset_from().exchange+ "\"];\n");
+            s.append("[label = \"" + std::to_string(e->weight()) + "_" + e->asset_from().exchange + "_" +
+                     e->asset_from().poolID + "\"];\n");
             s.append("\t");
         }
         s += "\n";
