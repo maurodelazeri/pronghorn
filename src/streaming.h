@@ -29,6 +29,7 @@ using namespace std;
 struct Quotes {
     std::string id;
     std::string poolID;
+    std::string chain;
     std::string protocol;
     std::string symbol;
     std::string name;

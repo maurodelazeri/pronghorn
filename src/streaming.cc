@@ -265,7 +265,7 @@ void Streaming::runCycle() {
                 }
                 char *m1 = nullptr;
                 asprintf(&m1, "%10.5f %s-%s-%s ", final_stake, edges.top()->asset_from().exchange.c_str(),
-                         edges.top()->asset_from().symbol.c_str(), edges.top()->asset_from().address.c_str());
+                         edges.top()->asset_from().symbol.c_str(), edges.top()->asset_from().poolID.c_str());
                 output.append(m1);
                 free(m1);
 
@@ -273,7 +273,7 @@ void Streaming::runCycle() {
 
                 char *m2 = nullptr;
                 asprintf(&m2, "= %10.5f %s-%s-%s\n", final_stake, edges.top()->asset_to().exchange.c_str(),
-                         edges.top()->asset_to().symbol.c_str(), edges.top()->asset_to().address.c_str());
+                         edges.top()->asset_to().symbol.c_str(), edges.top()->asset_to().poolID.c_str());
                 output.append(m2);
                 free(m2);
 
@@ -340,6 +340,7 @@ bool Streaming::load_active_pools() {
                     Quotes quote;
                     quote.id = sole::uuid4().str();
                     quote.poolID = data[i]["pool_id"].GetString();
+                    quote.chain = data[i]["chain"].GetString();
                     quote.protocol = data[i]["protocol"].GetString();
                     quote.symbol = data[i]["symbol"].GetString();
                     quote.name = data[i]["name"].GetString();
@@ -393,7 +394,7 @@ bool Streaming::load_active_pools() {
                         }
                     }
 
-                    if (quote.protocol != "PANCAKESWAP") {
+                    if (quote.chain != "BSC") {
                         continue;
                     }
 
