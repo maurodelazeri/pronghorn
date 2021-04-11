@@ -305,7 +305,6 @@ bool Streaming::load_active_pools() {
             if (cursor == -1) {
                 cursor = 0;
             }
-
             cout << "Loading data, cursor at:" << cursor << endl;
 
             rapidjson::Document document;
