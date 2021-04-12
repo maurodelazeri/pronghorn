@@ -6,6 +6,12 @@
 
 Streaming::Streaming() : websocket_client(this, "wss.zinnion.com") {
     lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
+
+    // NODE API
+    nodeRequest_ = std::make_unique<httplib::Client>(
+            "bsc_swapper", 3000
+    );
+    nodeRequest_->set_connection_timeout(120);
 }
 
 Streaming::~Streaming() {}
@@ -208,9 +214,6 @@ void Streaming::runCycle() {
     std::unordered_map<std::string, int> seq_mapping;
     std::vector<std::string> result;
 
-    // Arb opportunities found
-    std::vector<ArbOpportunitie> arb_opportunities;
-
     // Map unique symbols across all platforms
     int position = 0;
     {
@@ -236,6 +239,8 @@ void Streaming::runCycle() {
         G.addEdge(directedEdge[x]);
     }
 
+    std::vector<Arbitrage> arbitrages;
+
     for (int i = 0; i < position; i++) {
         // find negative cycle
         BellmanFordSP spt(G, i);
@@ -244,28 +249,15 @@ void Streaming::runCycle() {
 
         if (spt.hasNegativeCycle()) {
             stack<DirectedEdge *> edges(spt.negativeCycle());
-
-            std::vector<std::string> path;
-            std::vector<std::string> pool_id;
-            std::vector<std::string> path_exchange;
-            std::vector<int64_t> path_min_decimals;
-
-            double stake = 1;
-
-            int slippage_position = 0;
-            double final_stake = stake;
             std::string output;
-            Asset first_asset_from;
-            Asset first_asset_to;
+            double stake = 1;
+            double final_stake = stake;
 
+            Arbitrage arbitrage;
             while (!edges.empty()) {
-                if (first_asset_from.exchange.empty()) {
-                    first_asset_from = edges.top()->asset_from();
-                    first_asset_to = edges.top()->asset_to();
-                }
                 char *m1 = nullptr;
                 asprintf(&m1, "%10.5f %s-%s-%s ", final_stake, edges.top()->asset_from().exchange.c_str(),
-                         edges.top()->asset_from().symbol.c_str(), edges.top()->asset_from().poolID.c_str());
+                         edges.top()->asset_from().symbol.c_str(), edges.top()->asset_from().address.c_str());
                 output.append(m1);
                 free(m1);
 
@@ -273,27 +265,135 @@ void Streaming::runCycle() {
 
                 char *m2 = nullptr;
                 asprintf(&m2, "= %10.5f %s-%s-%s\n", final_stake, edges.top()->asset_to().exchange.c_str(),
-                         edges.top()->asset_to().symbol.c_str(), edges.top()->asset_to().poolID.c_str());
+                         edges.top()->asset_to().symbol.c_str(), edges.top()->asset_to().address.c_str());
                 output.append(m2);
                 free(m2);
 
-                path_min_decimals.emplace_back(edges.top()->asset_to().decimals);
-                path_exchange.emplace_back(edges.top()->asset_to().exchange);
-                path.emplace_back(edges.top()->asset_from().address);
-                if (edges.top()->asset_to().exchange == "BALANCER") { // Pool id only matters with balancer
-                    pool_id.emplace_back(edges.top()->asset_from().poolID);
-                } else {
-                    pool_id.emplace_back("_");
-                }
-                slippage_position++;
+                arbitrage.exchange.emplace_back(edges.top()->asset_to().exchange);
+                arbitrage.addr.emplace_back(edges.top()->asset_from().address);
+                arbitrage.pool_id.emplace_back(edges.top()->asset_from().poolID);
+
                 edges.pop();
             }
+            arbitrage.output = output;
+            arbitrages.emplace_back(arbitrage);
 
-            cout << output << endl;
-            //sleep(5);
+            //cout << output << endl;
         } else {
             // cout << "No negative cycle" << endl;
         }
+    }
+    // Send for execution
+    executeArbitrage(arbitrages);
+}
+
+void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
+    try {
+        rapidjson::Document document;
+        rapidjson::Document::AllocatorType &allocator = document.GetAllocator();
+        document.SetObject();
+        rapidjson::Value arbitragesArray(rapidjson::kArrayType);
+
+        for (auto const &arb : arbitrages) {
+            rapidjson::Document request_document;
+            request_document.SetObject();
+
+            rapidjson::Value obj(rapidjson::kObjectType);
+            rapidjson::Value val(rapidjson::kObjectType);
+            rapidjson::Value exchangeArray(rapidjson::kArrayType);
+            rapidjson::Value addrArray(rapidjson::kArrayType);
+            rapidjson::Value poolArray(rapidjson::kArrayType);
+
+            for (auto const &x : arb.exchange) {
+                val.SetString(x.c_str(), static_cast<rapidjson::SizeType>(x.length()),
+                              allocator);
+                exchangeArray.PushBack(val, allocator);
+            }
+
+            for (auto const &x : arb.addr) {
+                val.SetString(x.c_str(), static_cast<rapidjson::SizeType>(x.length()),
+                              allocator);
+                addrArray.PushBack(val, allocator);
+            }
+
+            for (auto const &x : arb.addr) {
+                val.SetString(x.c_str(), static_cast<rapidjson::SizeType>(x.length()),
+                              allocator);
+                poolArray.PushBack(val, allocator);
+            }
+
+            val.SetString(arb.output.c_str(),
+                          static_cast<rapidjson::SizeType>(arb.output.length()),
+                          allocator);
+            request_document.AddMember("output", val, allocator);
+            request_document.AddMember("exchange", exchangeArray, allocator);
+            request_document.AddMember("addr", addrArray, allocator);
+            request_document.AddMember("pool", poolArray, allocator);
+
+            arbitragesArray.PushBack(request_document.GetObject(), allocator);
+        }
+
+        document.AddMember("arbitrages", arbitragesArray, allocator);
+
+        std::string url = "/trade";
+        rapidjson::StringBuffer sb;
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+        document.Accept(writer);
+//        cout << sb.GetString() << endl;
+
+        auto res = nodeRequest_->Post(url.c_str(), sb.GetString(), "application/json");
+        if (res == nullptr) {
+            spdlog::error("Node api error 1: {}", "nullptr");
+            return;
+        }
+
+        if (res.error()) {
+            spdlog::error("Node api error 2: {}", res.error());
+            return;
+        }
+
+        // Parse the JSON
+        if (document.Parse(res->body.c_str()).HasParseError()) {
+            spdlog::error("Node api document parse error: {}", res->body.c_str());
+            return;
+        }
+
+        if (!document.IsObject()) {
+            spdlog::error("Node api  error: {}", "No data");
+            return;
+        }
+
+        if (document.HasMember("error")) {
+            const rapidjson::Value &error = document["error"];
+            if (error.GetBool()) {
+                const rapidjson::Value &message = document["message"];
+                spdlog::error("Node api: {}", message.GetString());
+            }
+        } else {
+            spdlog::error("Node api return does not contain a error status");
+            return;
+        }
+
+        if (document.HasMember("executed")) {
+            const rapidjson::Value &executed = document["executed"];
+            if (executed.GetBool()) {
+                if (document.HasMember("transactionHash")) {
+                    const rapidjson::Value &transactionHash = document["transactionHash"];
+                    const rapidjson::Value &profit = document["profit"];
+                    spdlog::info("Trade executed: transactionHash: {} Profit: {}", transactionHash.GetString(),
+                                 profit.GetDouble());
+
+                    std::ofstream out;
+                    auto givemetime = chrono::system_clock::to_time_t(chrono::system_clock::now());
+                    out.open("/opt/executions.log", std::ios::app);
+                    out << "-----------------------------------\n";
+                    out << ctime(&givemetime) << "Transaction Hash: " << transactionHash.GetString() << "\n"
+                        << "Profit: " << profit.GetDouble();
+                }
+            }
+        }
+    } catch (std::exception &e) {
+        spdlog::error("executeArbitrageparse error: {}", e.what());
     }
 }
 

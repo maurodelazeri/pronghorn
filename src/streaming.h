@@ -54,14 +54,9 @@ struct Quotes {
     double token1Price;
 };
 
-struct ArbOpportunitie {
-    double gross;
-    double expected_eth_net;
-    int64_t starting_volume;
-    int64_t starting_volume_decimals;
-    std::vector<std::string> path_exchange;
-    std::vector<int64_t> path_min_decimals;
-    std::vector<std::string> path;
+struct Arbitrage {
+    std::vector<std::string> addr;
+    std::vector<std::string> exchange;
     std::vector<std::string> pool_id;
     std::string output;
 };
@@ -74,6 +69,7 @@ private:
     bool system_debug_;
 
     httplib::Server server_;
+    std::unique_ptr<httplib::Client> nodeRequest_;
 
     std::unique_ptr<httplib::SSLClient> http_request_;
 
@@ -92,7 +88,11 @@ private:
 
     void runCycle();
 
-    void buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge, std::unordered_map<std::string, int> &seq_mapping);
+    void buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
+                                  std::unordered_map<std::string, int> &seq_mapping);
+
+    void executeArbitrage(const std::vector<Arbitrage> &arbitrages);
+
 public:
     Streaming();
 
