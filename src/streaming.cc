@@ -230,6 +230,7 @@ void Streaming::runCycle() {
     }
 
     // Build the direct edges
+    spdlog::info("Building directed edges");
     std::vector<DirectedEdge *> directedEdge;
     buildEdgeWeightedDigraph(directedEdge, seq_mapping);
     EdgeWeightedDigraph G(position);
@@ -241,11 +242,10 @@ void Streaming::runCycle() {
 
     std::vector<Arbitrage> arbitrages;
 
+    spdlog::info("Checking arbitrage opportunities");
     for (int i = 0; i < position; i++) {
         // find negative cycle
         BellmanFordSP spt(G, i);
-
-//        cout << G.toString() << endl;
 
         if (spt.hasNegativeCycle()) {
             stack<DirectedEdge *> edges(spt.negativeCycle());
