@@ -308,7 +308,7 @@ bool Streaming::load_active_pools() {
             cout << "Loading data, cursor at:" << cursor << endl;
 
             rapidjson::Document document;
-            std::string url = "/v1/active-pools/all/" + to_string(cursor) + "/1000";
+            std::string url = "/v1/active-pools/bsc/*/" + to_string(cursor) + "/1000";
             auto res = http_request_->Get(url.c_str());
             if (res == nullptr) {
                 spdlog::error("Error: {}", "nullptr");
