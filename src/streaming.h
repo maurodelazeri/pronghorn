@@ -92,8 +92,9 @@ private:
     void buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
                                   std::unordered_map<std::string, int> &seq_mapping);
 
-    void executeArbitrage(const std::vector<Arbitrage> &arbitrages);
+    void simulateArbitrage(const std::vector<Arbitrage> &arbitrages);
 
+    void simulateArbitrage(const std::string &arbitrage);
 public:
     Streaming();
 

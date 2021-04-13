@@ -277,7 +277,7 @@ void Streaming::runCycle() {
 
                 edges.pop();
             }
-            
+
             const std::string executionhash = md5_from_file(output);
             if (hash.count(executionhash)) {
                 // if the hash already exist, we dont need to add it again
@@ -286,7 +286,11 @@ void Streaming::runCycle() {
 
             hash[executionhash] = true;
             arbitrage.output = output;
-            arbitrages.emplace_back(arbitrage);
+
+            // Only if starts with WBNB
+            if (arbitrage.addr[0] == "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
+                arbitrages.emplace_back(arbitrage);
+            }
 
             //cout << output << endl;
         } else {
@@ -294,19 +298,19 @@ void Streaming::runCycle() {
         }
     }
     // Send for execution
-    executeArbitrage(arbitrages);
+    simulateArbitrage(arbitrages);
     sleep(10);
 }
 
-void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
+void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
     try {
-        rapidjson::Document document;
-        rapidjson::Document::AllocatorType &allocator = document.GetAllocator();
-        document.SetObject();
-        rapidjson::Value arbitragesArray(rapidjson::kArrayType);
+        spdlog::info("{} Opportunities found, sending it over to further check", arbitrages.size());
 
+        std::string most_profitable;
+        double final_profit = 0.0;
         for (auto const &arb : arbitrages) {
             rapidjson::Document request_document;
+            rapidjson::Document::AllocatorType &allocator = request_document.GetAllocator();
             request_document.SetObject();
 
             rapidjson::Value obj(rapidjson::kObjectType);
@@ -341,24 +345,75 @@ void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
             request_document.AddMember("addr", addrArray, allocator);
             request_document.AddMember("pool", poolArray, allocator);
 
-//            rapidjson::StringBuffer sb;
-//            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-//            request_document.Accept(writer);
-//            cout << sb.GetString() << endl;
+            val.SetDouble(0.1);
+            request_document.AddMember("starting_volume", val, allocator);
 
-            arbitragesArray.PushBack(request_document.GetObject(), allocator);
+            rapidjson::StringBuffer sb;
+            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+            request_document.Accept(writer);
+
+            std::string url = "/simulation";
+            auto res = nodeRequest_->Post(url.c_str(), sb.GetString(), "application/json");
+            if (res == nullptr) {
+                spdlog::error("Node api error 1: {}", "nullptr");
+                return;
+            }
+
+            if (res.error()) {
+                spdlog::error("Node api error 2: {}", res.error());
+                return;
+            }
+
+            rapidjson::Document document;
+
+            // Parse the JSON
+            if (document.Parse(res->body.c_str()).HasParseError()) {
+                spdlog::error("Node api document parse error: {}", res->body.c_str());
+                return;
+            }
+
+            if (!document.IsObject()) {
+                spdlog::error("Node api  error: {}", "No data");
+                return;
+            }
+
+            if (document.HasMember("error")) {
+                const rapidjson::Value &error = document["error"];
+                if (error.GetBool()) {
+                    const rapidjson::Value &message = document["message"];
+                    spdlog::error("Node api: {}", message.GetString());
+                }
+            } else {
+                spdlog::error("Node api return does not contain a error status");
+                return;
+            }
+            if (document.HasMember("profit")) {
+                const rapidjson::Value &profit = document["profit"];
+                //spdlog::info("Simulation of profit: {}", profit.GetDouble());
+                if (final_profit < profit.GetDouble()) {
+                    final_profit = profit.GetDouble();
+                    most_profitable = sb.GetString();
+                }
+            }
         }
 
-        spdlog::info("{} Opportunities found, sending it over to further check", arbitragesArray.Size());
+        cout << most_profitable << endl;
+        cout << final_profit << endl;
 
-        document.AddMember("arbitrages", arbitragesArray, allocator);
+        if (final_profit > 0) {
+            simulateArbitrage(most_profitable);
+        } else {
+            spdlog::info("Nothing to execute");
+        }
+    } catch (std::exception &e) {
+        spdlog::error("simulateArbitrage error: {}", e.what());
+    }
+}
 
+void Streaming::simulateArbitrage(const std::string &arbitrage) {
+    try {
         std::string url = "/trade";
-        rapidjson::StringBuffer sb;
-        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-        document.Accept(writer);
-
-        auto res = nodeRequest_->Post(url.c_str(), sb.GetString(), "application/json");
+        auto res = nodeRequest_->Post(url.c_str(), arbitrage, "application/json");
         if (res == nullptr) {
             spdlog::error("Node api error 1: {}", "nullptr");
             return;
@@ -368,6 +423,8 @@ void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
             spdlog::error("Node api error 2: {}", res.error());
             return;
         }
+
+        rapidjson::Document document;
 
         // Parse the JSON
         if (document.Parse(res->body.c_str()).HasParseError()) {
@@ -410,13 +467,12 @@ void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
         }
     } catch (std::exception &e) {
-        spdlog::error("executeArbitrageparse error: {}", e.what());
+        spdlog::error("simulateArbitrage error: {}", e.what());
     }
 }
 
 bool Streaming::load_active_pools() {
     try {
-
         int64_t cursor = -1;
         while (cursor != 0) {
             if (cursor == -1) {
