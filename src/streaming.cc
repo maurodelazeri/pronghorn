@@ -269,9 +269,10 @@ void Streaming::runCycle() {
                 output.append(m2);
                 free(m2);
 
-                arbitrage.exchange.emplace_back(edges.top()->asset_to().exchange);
                 arbitrage.addr.emplace_back(edges.top()->asset_from().address);
-                arbitrage.pool_id.emplace_back(edges.top()->asset_from().poolID);
+                arbitrage.addr.emplace_back(edges.top()->asset_to().address);
+                arbitrage.exchange.emplace_back(edges.top()->asset_to().exchange);
+                arbitrage.pool.emplace_back(edges.top()->asset_to().poolID);
 
                 edges.pop();
             }
@@ -285,6 +286,7 @@ void Streaming::runCycle() {
     }
     // Send for execution
     executeArbitrage(arbitrages);
+    sleep(10);
 }
 
 void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
@@ -330,6 +332,11 @@ void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
             request_document.AddMember("addr", addrArray, allocator);
             request_document.AddMember("pool", poolArray, allocator);
 
+//            rapidjson::StringBuffer sb;
+//            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+//            request_document.Accept(writer);
+//            cout << sb.GetString() << endl;
+
             arbitragesArray.PushBack(request_document.GetObject(), allocator);
         }
 
@@ -339,7 +346,6 @@ void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
         rapidjson::StringBuffer sb;
         rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
         document.Accept(writer);
-//        cout << sb.GetString() << endl;
 
         auto res = nodeRequest_->Post(url.c_str(), sb.GetString(), "application/json");
         if (res == nullptr) {

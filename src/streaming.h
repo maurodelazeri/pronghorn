@@ -57,7 +57,7 @@ struct Quotes {
 struct Arbitrage {
     std::vector<std::string> addr;
     std::vector<std::string> exchange;
-    std::vector<std::string> pool_id;
+    std::vector<std::string> pool;
     std::string output;
 };
 
