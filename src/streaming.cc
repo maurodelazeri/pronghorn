@@ -243,6 +243,7 @@ void Streaming::runCycle() {
     std::vector<Arbitrage> arbitrages;
 
     spdlog::info("Checking arbitrage opportunities");
+    std::unordered_map<std::string, bool> hash;
     for (int i = 0; i < position; i++) {
         // find negative cycle
         BellmanFordSP spt(G, i);
@@ -276,6 +277,14 @@ void Streaming::runCycle() {
 
                 edges.pop();
             }
+            
+            const std::string executionhash = md5_from_file(output);
+            if (hash.count(executionhash)) {
+                // if the hash already exist, we dont need to add it again
+                continue;
+            }
+
+            hash[executionhash] = true;
             arbitrage.output = output;
             arbitrages.emplace_back(arbitrage);
 
@@ -339,6 +348,8 @@ void Streaming::executeArbitrage(const std::vector<Arbitrage> &arbitrages) {
 
             arbitragesArray.PushBack(request_document.GetObject(), allocator);
         }
+
+        spdlog::info("{} Opportunities found, sending it over to further check", arbitragesArray.Size());
 
         document.AddMember("arbitrages", arbitragesArray, allocator);
 

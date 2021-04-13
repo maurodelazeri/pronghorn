@@ -16,6 +16,7 @@
 #include "libs/misc/system.h"
 #include "libs/misc/sole.h"
 #include "libs/misc/elapsed.h"
+#include "libs/misc/md5.h"
 #include "libs/ws_client/callback.h"
 #include "libs/ws_client/websocket_client.h"
 #include "libs/match.h"
