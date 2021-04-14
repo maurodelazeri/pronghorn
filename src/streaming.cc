@@ -306,8 +306,11 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
     try {
         spdlog::info("{} Opportunities found, sending it over to further check", arbitrages.size());
 
-        std::string most_profitable;
         double final_profit = 0.0;
+        int current_index = 0;
+        int execution_index = 0;
+        std::string execution_json;
+
         for (auto const &arb : arbitrages) {
             rapidjson::Document request_document;
             rapidjson::Document::AllocatorType &allocator = request_document.GetAllocator();
@@ -345,7 +348,7 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             request_document.AddMember("addr", addrArray, allocator);
             request_document.AddMember("pool", poolArray, allocator);
 
-            val.SetDouble(0.1);
+            val.SetDouble(initial_volume_);
             request_document.AddMember("starting_volume", val, allocator);
 
             rapidjson::StringBuffer sb;
@@ -392,16 +395,58 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
                 //spdlog::info("Simulation of profit: {}", profit.GetDouble());
                 if (final_profit < profit.GetDouble()) {
                     final_profit = profit.GetDouble();
-                    most_profitable = sb.GetString();
+                    execution_json = sb.GetString();
+                    execution_index = current_index;
                 }
             }
+            current_index++;
         }
 
-        cout << most_profitable << endl;
-        cout << final_profit << endl;
-
         if (final_profit > 0) {
-            simulateArbitrage(most_profitable);
+            spdlog::info("Profitable operation found {}", final_profit);
+
+            if (arbitrages[execution_index].exchange.size() == 2) {
+                final_profit -= 0.00182082;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+            } else if (arbitrages[execution_index].exchange.size() == 3) {
+                final_profit -= 0.00313629;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+            } else if (arbitrages[execution_index].exchange.size() == 4) {
+                final_profit -= 0.00399482;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+            } else if (arbitrages[execution_index].exchange.size() == 5) {
+                final_profit -= 0.0047071;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+            } else if (arbitrages[execution_index].exchange.size() == 6) {
+                final_profit -= 0.00525459;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+                final_profit -= initial_volume_ * 0.003;
+            } else {
+                spdlog::info("Execution has more than 6 hoops, we are not handling it");
+                return;
+            }
+
+            if (final_profit > 0) {
+                spdlog::info("Operation payload {}", arbitrages[execution_index].output);
+                spdlog::info("Sending execution expecting {} BNB in returns.", final_profit);
+                executeArbitrage(arbitrages[execution_index], execution_json);
+            } else {
+                spdlog::info("No Profitable profits profits after fees");
+            }
         } else {
             spdlog::info("Nothing to execute");
         }
@@ -410,10 +455,10 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
     }
 }
 
-void Streaming::simulateArbitrage(const std::string &arbitrage) {
+void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &execution_json) {
     try {
         std::string url = "/trade";
-        auto res = nodeRequest_->Post(url.c_str(), arbitrage, "application/json");
+        auto res = nodeRequest_->Post(url.c_str(), execution_json, "application/json");
         if (res == nullptr) {
             spdlog::error("Node api error 1: {}", "nullptr");
             return;

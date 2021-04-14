@@ -69,6 +69,8 @@ class Streaming : public websocket_client, public client_callback_t {
 private:
     bool system_debug_;
 
+    double initial_volume_ = 0.1;
+
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
 
@@ -94,7 +96,8 @@ private:
 
     void simulateArbitrage(const std::vector<Arbitrage> &arbitrages);
 
-    void simulateArbitrage(const std::string &arbitrage);
+    void executeArbitrage(const Arbitrage &arbitrage, const std::string &execution_json);
+
 public:
     Streaming();
 
