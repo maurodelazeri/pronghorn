@@ -53,6 +53,11 @@ void Streaming::start() {
 //    load_active_pools();
 //    rungWebServer();
 
+//    Arbitrage arbitrage;
+//    std::string json = R"({ "starting_volume": 5.1, "output": "", "exchange": [ "PANCAKESWAP", "PANCAKESWAP", "PANCAKESWAP" ], "addr": [ "0xae13d989dac2f0debff460ac112a837c89baa7cd", "0x749aa89220f807242888782b59d599fe933eecb1", "0x749aa89220f807242888782b59d599fe933eecb1", "0xed24fc36d5ee211ea25a80239fb8c4cfd80f12ee", "0xed24fc36d5ee211ea25a80239fb8c4cfd80f12ee", "0xae13d989dac2f0debff460ac112a837c89baa7cd" ], "pool": [ ] })";
+//    executeArbitrage(arbitrage, json);
+//    exit(0);
+
     while (true) {
         auto elapsed = make_unique<Elapsed>("Arb Cycle");
         quotes_.clear();
@@ -289,7 +294,12 @@ void Streaming::runCycle() {
 
             // Only if starts with WBNB
             if (arbitrage.addr[0] == "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
-                arbitrages.emplace_back(arbitrage);
+                // Only pancakeswap
+                for (auto const &exchange : arbitrage.exchange) {
+                    if (exchange != "BURGERSWAP") {
+                        arbitrages.emplace_back(arbitrage);
+                    }
+                }
             }
 
             //cout << output << endl;
@@ -334,7 +344,7 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
                 addrArray.PushBack(val, allocator);
             }
 
-            for (auto const &x : arb.addr) {
+            for (auto const &x : arb.pool) {
                 val.SetString(x.c_str(), static_cast<rapidjson::SizeType>(x.length()),
                               allocator);
                 poolArray.PushBack(val, allocator);
@@ -443,6 +453,9 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             if (final_profit > 0) {
                 spdlog::info("Operation payload {}", arbitrages[execution_index].output);
                 spdlog::info("Sending execution expecting {} BNB in returns.", final_profit);
+
+                cout << execution_json << endl;
+
                 executeArbitrage(arbitrages[execution_index], execution_json);
             } else {
                 spdlog::info("No Profitable profits profits after fees");

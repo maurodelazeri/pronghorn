@@ -69,7 +69,7 @@ class Streaming : public websocket_client, public client_callback_t {
 private:
     bool system_debug_;
 
-    double initial_volume_ = 0.1;
+    double initial_volume_ = 1;
 
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
