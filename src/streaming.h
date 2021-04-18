@@ -17,8 +17,6 @@
 #include "libs/misc/sole.h"
 #include "libs/misc/elapsed.h"
 #include "libs/misc/md5.h"
-#include "libs/ws_client/callback.h"
-#include "libs/ws_client/websocket_client.h"
 #include "libs/match.h"
 
 #include "libs/graph/directed_edge.h"
@@ -29,30 +27,18 @@ using namespace std;
 
 struct Quotes {
     std::string id;
-    std::string poolID;
-    std::string chain;
     std::string protocol;
-    std::string symbol;
-    std::string name;
-    double swap_fee;
-    double virtual_price;
-    int64_t amplification;
-    int64_t decimals;
-    int64_t block_number;
-    std::string transaction_hash;
-    int64_t processed_timestamp;
+    std::string poolID;
     std::string token0Symbol;
     std::string token1Symbol;
     std::string token0Address;
     std::string token1Address;
     int64_t token0decimals;
     int64_t token1decimals;
-    double token0Reserves;
-    double token1Reserves;
-    double token0Weight;
-    double token1Weight;
     double token0Price;
     double token1Price;
+    double token0derivedBNB;
+    double token1derivedBNB;
 };
 
 struct Arbitrage {
@@ -65,29 +51,22 @@ struct Arbitrage {
 typedef tbb::concurrent_hash_map<string, Quotes> quotesTable;
 typedef tbb::concurrent_hash_map<string, std::vector<Quotes>> connectionsTable;
 
-class Streaming : public websocket_client, public client_callback_t {
+class Streaming {
 private:
     bool system_debug_;
 
-    double initial_volume_ = 1;
+    double initial_volume_ = 0.1;
 
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
+    std::unique_ptr<httplib::SSLClient> graphRequest_;
 
     std::unique_ptr<httplib::SSLClient> http_request_;
 
     quotesTable quotes_;
     connectionsTable connections_;
 
-    void on_connected() override;
-
-    void on_disconnected() override;
-
-    void on_error(const char *msg, size_t len) override;
-
-    void on_data(const char *data, size_t len, size_t remaining) override;
-
-    bool load_active_pools();
+    bool loadPancakeSwapPrices();
 
     void runCycle();
 

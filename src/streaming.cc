@@ -4,38 +4,21 @@
 
 #include "streaming.h"
 
-Streaming::Streaming() : websocket_client(this, "wss.zinnion.com") {
-    lws_set_log_level(LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE, nullptr);
-
-    // NODE API
+Streaming::Streaming() {
+    // Node API
     nodeRequest_ = std::make_unique<httplib::Client>(
             "bsc_swapper", 3000
     );
     nodeRequest_->set_connection_timeout(120);
+
+    // The graph
+    graphRequest_ = std::make_unique<httplib::SSLClient>(
+            "api.thegraph.com", 443
+    );
+    graphRequest_->set_connection_timeout(15);
 }
 
 Streaming::~Streaming() {}
-
-void Streaming::on_connected() {
-    lwsl_user("client connected\n");
-    std::string msg = R"({ "type": "subscribe", "channels": ["TICKERS_UNISWAPV2","TICKERS_SUSHISWAP","TICKERS_BALANCER","TICKERS_BANCOR","TICKERS_BALANCER","TICKERS_CURVEFI"] })";
-    send(msg.data(), msg.size());
-}
-
-void Streaming::on_disconnected() {
-    lwsl_user("client disconnected\n");
-}
-
-void Streaming::on_error(const char *msg, size_t len) {
-    lwsl_user("client error\n");
-}
-
-void Streaming::on_data(const char *data, size_t len, size_t remaining) {
-    std::string msg(data, len);
-    if (system_debug_) {
-        lwsl_user("data from server: %s\n", msg.c_str());
-    }
-}
 
 void Streaming::start() {
     system_debug_ = (strcasecmp("true", utils::getEnvVar("DEBUG").c_str()) == 0);
@@ -62,7 +45,7 @@ void Streaming::start() {
         auto elapsed = make_unique<Elapsed>("Arb Cycle");
         quotes_.clear();
         connections_.clear();
-        load_active_pools();
+        loadPancakeSwapPrices();
         spdlog::info("{} quotes located", quotes_.size());
         runCycle();
     }
@@ -80,7 +63,7 @@ void Streaming::rungWebServer() {
         server_.Get("/connections", [this](const httplib::Request &req, httplib::Response &res) {
             // Logic
             std::unordered_map<std::string, int> seq_mapping;
-            std::vector<std::string> result;
+            std::vector <std::string> result;
 
             // Map unique symbols across all platforms
             int position = 0;
@@ -98,7 +81,7 @@ void Streaming::rungWebServer() {
             }
 
             // Build the direct edges
-            std::vector<DirectedEdge *> directedEdge;
+            std::vector < DirectedEdge * > directedEdge;
             buildEdgeWeightedDigraph(directedEdge, seq_mapping);
             EdgeWeightedDigraph G(position);
 
@@ -217,7 +200,7 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
 void Streaming::runCycle() {
     // Logic
     std::unordered_map<std::string, int> seq_mapping;
-    std::vector<std::string> result;
+    std::vector <std::string> result;
 
     // Map unique symbols across all platforms
     int position = 0;
@@ -236,7 +219,7 @@ void Streaming::runCycle() {
 
     // Build the direct edges
     spdlog::info("Building directed edges");
-    std::vector<DirectedEdge *> directedEdge;
+    std::vector < DirectedEdge * > directedEdge;
     buildEdgeWeightedDigraph(directedEdge, seq_mapping);
     EdgeWeightedDigraph G(position);
 
@@ -245,7 +228,7 @@ void Streaming::runCycle() {
         G.addEdge(directedEdge[x]);
     }
 
-    std::vector<Arbitrage> arbitrages;
+    std::vector <Arbitrage> arbitrages;
 
     spdlog::info("Checking arbitrage opportunities");
     std::unordered_map<std::string, bool> hash;
@@ -254,7 +237,7 @@ void Streaming::runCycle() {
         BellmanFordSP spt(G, i);
 
         if (spt.hasNegativeCycle()) {
-            stack<DirectedEdge *> edges(spt.negativeCycle());
+            stack < DirectedEdge * > edges(spt.negativeCycle());
             std::string output;
             double stake = 1;
             double final_stake = stake;
@@ -312,7 +295,7 @@ void Streaming::runCycle() {
     sleep(10);
 }
 
-void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
+void Streaming::simulateArbitrage(const std::vector <Arbitrage> &arbitrages) {
     try {
         spdlog::info("{} Opportunities found, sending it over to further check", arbitrages.size());
 
@@ -362,7 +345,7 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             request_document.AddMember("starting_volume", val, allocator);
 
             rapidjson::StringBuffer sb;
-            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+            rapidjson::PrettyWriter <rapidjson::StringBuffer> writer(sb);
             request_document.Accept(writer);
 
             std::string url = "/simulation";
@@ -529,139 +512,114 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
     }
 }
 
-bool Streaming::load_active_pools() {
+bool Streaming::loadPancakeSwapPrices() {
     try {
-        int64_t cursor = -1;
-        while (cursor != 0) {
-            if (cursor == -1) {
-                cursor = 0;
-            }
-            cout << "Loading data, cursor at:" << cursor << endl;
+        rapidjson::Document document;
 
-            rapidjson::Document document;
-            std::string url = "/v1/active-pools/bsc/*/" + to_string(cursor) + "/1000";
-            auto res = http_request_->Get(url.c_str());
-            if (res == nullptr) {
-                spdlog::error("Error: {}", "nullptr");
-                break;
-            }
+        std::string url = "/subgraphs/name/henry0717/pancakeswapv2";
+        std::string data = R"({ "query": "{ pairs ( first: 100, orderBy: reserveUSD, orderDirection: desc ) { id token0 { id name symbol derivedETH decimals} token1 { id name symbol derivedETH decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveETH reserveUSD token0Price token1Price } }"})";
 
-            if (res.error()) {
-                spdlog::error("Error: {}", res.error());
-                break;
-            }
+        auto res = graphRequest_->Post(url.c_str(), data, "application/json");
+        if (res == nullptr) {
+            spdlog::error("PancakeSwap subgraph error: {}", "nullptr");
+            return false;
+        }
 
-            // Parse the JSON
-            if (document.Parse(res->body.c_str()).HasParseError()) {
-                spdlog::error("Document parse error: {}", res->body.c_str());
-                break;
-            }
+        if (res.error()) {
+            spdlog::error("PancakeSwap subgraph error: {}", res.error());
+            return false;
+        }
 
-            if (!document.IsObject()) {
-                spdlog::error("Error: {}", "No data");
-                break;
-            }
+        // Parse the JSON
+        if (document.Parse(res->body.c_str()).HasParseError()) {
+            spdlog::error("PancakeSwap subgraph document parse error: {}", res->body.c_str());
+            return false;
+        }
 
-            if (document.HasMember("data")) {
-                cursor = document["next_cursor"].GetInt64();
+        if (!document.IsObject()) {
+            spdlog::error("PancakeSwap subgraph error: {}", "No data");
+            return false;
+        }
 
-                const rapidjson::Value &data = document["data"];
-                for (rapidjson::SizeType i = 0; i < data.Size(); i++) {
-                    Quotes quote;
-                    quote.id = sole::uuid4().str();
-                    quote.poolID = data[i]["pool_id"].GetString();
-                    quote.chain = data[i]["chain"].GetString();
-                    quote.protocol = data[i]["protocol"].GetString();
-                    quote.symbol = data[i]["symbol"].GetString();
-                    quote.name = data[i]["name"].GetString();
-                    quote.swap_fee = std::stod(data[i]["swap_fee"].GetString());
-                    quote.decimals = std::stoi(data[i]["decimals"].GetString());
-                    quote.block_number = data[i]["block_number"].GetInt64();
-                    quote.processed_timestamp = data[i]["processed_timestamp"].GetInt64();
-                    quote.transaction_hash = data[i]["transaction_hash"].GetString();
+        rapidjson::StringBuffer sb;
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+        document.Accept(writer);
+        puts(sb.GetString());
 
-                    if (document.HasMember("virtual_price")) {
-                        quote.virtual_price = std::stod(data[i]["virtual_price"].GetString());
-                    }
-                    if (document.HasMember("amplification")) {
-                        quote.amplification = std::stoi(data[i]["amplification"].GetString());
-                    }
+        // Put the data int the struct
+        if (document.HasMember("data")) {
+            if (document["data"].HasMember("pairs")) {
+                if (document["data"]["pairs"].IsArray()) {
+                    const rapidjson::Value &pairs = document["data"]["pairs"];
+                    for (rapidjson::SizeType i = 0; i < pairs.Size(); i++) {
+                        Quotes quote;
+                        quote.id = sole::uuid4().str();
+                        quote.protocol = "PANCAKESWAP";
+                        quote.poolID = pairs[i]["id"].GetString();
 
-                    const rapidjson::Value &tokens = data[i]["tokens"];
-                    for (rapidjson::SizeType x = 0; x < tokens.Size(); x++) {
-                        for (rapidjson::SizeType y = x + 1; y < tokens.Size(); y++) {
-                            // Token 0
-                            quote.token0Symbol = tokens[x]["symbol"].GetString();
-                            quote.token0decimals = std::stoi(tokens[x]["decimals"].GetString());
-                            quote.token0Address = tokens[x]["address"].GetString();
-                            quote.token0Reserves = std::stod(tokens[x]["reserves"].GetString());
-                            quote.token0Weight = std::stod(tokens[x]["weight"].GetString());
+                        // Token 0
+                        quote.token0Symbol = pairs[i]["token0"]["symbol"].GetString();
+                        quote.token0decimals = std::stoi(
+                                pairs[i]["token0"]["decimals"].GetString());
+                        quote.token0Address = pairs[i]["token0"]["id"].GetString();
+                        quote.token0Price =
+                                std::stod(pairs[i]["token0Price"].GetString());
+                        //quote.token0derivedBNB = std::stod(pairs[i]["derivedBNB"].GetString());
 
-                            if (quote.protocol == "CURVEFI") {
-                                quote.token0Price = quote.virtual_price;
-                            } else {
-                                quote.token0Price = calcSpotPrice(std::stod(tokens[x]["reserves"].GetString()),
-                                                                  std::stod(tokens[x]["weight"].GetString()),
-                                                                  std::stod(tokens[y]["reserves"].GetString()),
-                                                                  std::stod(tokens[y]["weight"].GetString()));
+                        // Token 1
+                        quote.token1Symbol = pairs[i]["token1"]["symbol"].GetString();
+                        quote.token1decimals = std::stoi(
+                                pairs[i]["token1"]["decimals"].GetString());
+                        quote.token1Address = pairs[i]["token1"]["id"].GetString();
+                        quote.token1Price =
+                                std::stod(pairs[i]["token1Price"].GetString());
+                        //quote.token1derivedBNB = std::stod(pairs[i]["derivedBNB"].GetString());
 
+                        if (quote.token0Address.empty() || quote.token1Address.empty()) {
+                            spdlog::warn("PancakeSwap problem with pair: {} there's no address", quote.poolID);
+                            continue;
+                        }
+
+                        // Quotes
+                        {
+                            quotesTable::accessor quotes_assessor;
+                            quotes_.find(quotes_assessor, quote.id);
+                            if (quotes_assessor.empty()) {
+                                quotes_.insert(quotes_assessor, quote.id);
                             }
-                            // Token 1
-                            quote.token1Symbol = tokens[y]["symbol"].GetString();
-                            quote.token1decimals = std::stoi(tokens[y]["decimals"].GetString());
-                            quote.token1Address = tokens[y]["address"].GetString();
-                            quote.token1Reserves = std::stod(tokens[y]["reserves"].GetString());
-                            quote.token1Weight = std::stod(tokens[y]["weight"].GetString());
-
-                            if (quote.protocol == "CURVEFI") {
-                                quote.token1Price = quote.virtual_price;
-                            } else {
-                                quote.token1Price = calcSpotPrice(std::stod(tokens[y]["reserves"].GetString()),
-                                                                  std::stod(tokens[y]["weight"].GetString()),
-                                                                  std::stod(tokens[x]["reserves"].GetString()),
-                                                                  std::stod(tokens[x]["weight"].GetString()));
+                            quotes_assessor->second = quote;
+                        }
+                        // Connections
+                        {
+                            connectionsTable::accessor connections_assessor;
+                            connections_.find(connections_assessor, quote.protocol + "_" + quote.token0Address);
+                            if (connections_assessor.empty()) {
+                                connections_.insert(connections_assessor, quote.protocol + "_" + quote.token0Address);
                             }
+                            connections_assessor->second.emplace_back(quote);
                         }
-                    }
 
-                    if (quote.chain != "BSC") {
-                        continue;
-                    }
-
-                    // Quotes
-                    {
-                        quotesTable::accessor quotes_assessor;
-                        quotes_.find(quotes_assessor, quote.id);
-                        if (quotes_assessor.empty()) {
-                            quotes_.insert(quotes_assessor, quote.id);
+                        {
+                            connectionsTable::accessor connections_assessor;
+                            connections_.find(connections_assessor, quote.protocol + "_" + quote.token1Address);
+                            if (connections_assessor.empty()) {
+                                connections_.insert(connections_assessor, quote.protocol + "_" + quote.token1Address);
+                            }
+                            connections_assessor->second.emplace_back(quote);
                         }
-                        quotes_assessor->second = quote;
                     }
-                    // Connections
-                    {
-                        connectionsTable::accessor connections_assessor;
-                        connections_.find(connections_assessor, quote.protocol + "_" + quote.token0Address);
-                        if (connections_assessor.empty()) {
-                            connections_.insert(connections_assessor, quote.protocol + "_" + quote.token0Address);
-                        }
-                        connections_assessor->second.emplace_back(quote);
-                    }
-                    {
-                        connectionsTable::accessor connections_assessor;
-                        connections_.find(connections_assessor, quote.protocol + "_" + quote.token1Address);
-                        if (connections_assessor.empty()) {
-                            connections_.insert(connections_assessor, quote.protocol + "_" + quote.token1Address);
-                        }
-                        connections_assessor->second.emplace_back(quote);
-                    }
+                } else {
+                    return false;
                 }
             } else {
-                break;
+                return false;
             }
+        } else {
+            return false;
         }
         return true;
     } catch (std::exception &e) {
-        spdlog::error("Parse error: {}", e.what());
+        spdlog::error("PancakeSwap subgraph parse error: {}", e.what());
     }
     return false;
 }
