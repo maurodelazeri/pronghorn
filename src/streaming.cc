@@ -43,6 +43,8 @@ void Streaming::start() {
         loadPancakeSwapPrices();
         spdlog::info("{} quotes located", quotes_.size());
         runCycle();
+        spdlog::info("Waiting {} seconds before trying again", 10);
+        sleep(10);
     }
 
     rungWebServer();
@@ -231,6 +233,8 @@ void Streaming::runCycle() {
         // find negative cycle
         BellmanFordSP spt(G, i);
 
+      //  cout << G.toString() << endl;
+
         if (spt.hasNegativeCycle()) {
             stack < DirectedEdge * > edges(spt.negativeCycle());
             std::string output;
@@ -287,7 +291,6 @@ void Streaming::runCycle() {
     }
     // Send for execution
     simulateArbitrage(arbitrages);
-    sleep(10);
 }
 
 void Streaming::simulateArbitrage(const std::vector <Arbitrage> &arbitrages) {
@@ -517,7 +520,7 @@ bool Streaming::loadPancakeSwapPrices() {
         rapidjson::Document document;
 
         std::string url = "/subgraphs/name/maurodelazeri/exchange";
-        std::string data = R"({ "query": "{ pairs( first: 1000 orderBy: reserveBNB orderDirection: desc ) { id token0 { id name symbol derivedBNB decimals } token1 { id name symbol derivedBNB decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveBNB reserveUSD token0Price token1Price } }"})";
+        std::string data = R"({ "query": "{ pairs( first: 30 orderBy: reserveBNB orderDirection: desc ) { id token0 { id name symbol derivedBNB decimals } token1 { id name symbol derivedBNB decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveBNB reserveUSD token0Price token1Price } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
