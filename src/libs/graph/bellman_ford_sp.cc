@@ -191,6 +191,7 @@ bool BellmanFordSP::check(const EdgeWeightedDigraph& G, int s) {
             printf("distanceTo[s] and edgeTo[s] inconsistent\n %f %s\n",_distTo[s], _edgeTo[s]->toString().c_str());
             return false;
         }
+
         for (int v = 0; v < G.V(); v++) {
             if (v == s) continue;
             if (_edgeTo[v] == nullptr && _distTo[v] != std::numeric_limits<double>::max()) {
