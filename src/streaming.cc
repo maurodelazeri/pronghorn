@@ -12,8 +12,8 @@ Streaming::Streaming() {
     nodeRequest_->set_connection_timeout(120);
 
     // The graph
-    graphRequest_ = std::make_unique<httplib::SSLClient>(
-            "api.thegraph.com", 443
+    graphRequest_ = std::make_unique<httplib::Client>(
+            "graph_bsc.zinnion.com", 7000
     );
     graphRequest_->set_connection_timeout(15);
 }
@@ -25,11 +25,6 @@ void Streaming::start() {
     if (system_debug_) {
         spdlog::info("DEBUG MODE IS ENABLED");
     }
-
-    http_request_ = std::make_unique<httplib::SSLClient>(
-            "api.zinnion.com", 443
-    );
-    http_request_->set_connection_timeout(15);
 
     // Websocket
     //connect();
@@ -297,6 +292,11 @@ void Streaming::runCycle() {
 
 void Streaming::simulateArbitrage(const std::vector <Arbitrage> &arbitrages) {
     try {
+        if (arbitrages.empty()){
+            spdlog::info("No Opportunities found");
+            return;
+        }
+
         spdlog::info("{} Opportunities found, sending it over to further check", arbitrages.size());
 
         double final_profit = 0.0;
@@ -516,8 +516,8 @@ bool Streaming::loadPancakeSwapPrices() {
     try {
         rapidjson::Document document;
 
-        std::string url = "/subgraphs/name/henry0717/pancakeswapv2";
-        std::string data = R"({ "query": "{ pairs ( first: 100, orderBy: reserveUSD, orderDirection: desc ) { id token0 { id name symbol derivedETH decimals} token1 { id name symbol derivedETH decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveETH reserveUSD token0Price token1Price } }"})";
+        std::string url = "/subgraphs/name/maurodelazeri/exchange";
+        std::string data = R"({ "query": "{ pairs( first: 1000 orderBy: reserveBNB orderDirection: desc ) { id token0 { id name symbol derivedBNB decimals } token1 { id name symbol derivedBNB decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveBNB reserveUSD token0Price token1Price } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
@@ -541,10 +541,10 @@ bool Streaming::loadPancakeSwapPrices() {
             return false;
         }
 
-        rapidjson::StringBuffer sb;
-        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-        document.Accept(writer);
-        puts(sb.GetString());
+//        rapidjson::StringBuffer sb;
+//        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+//        document.Accept(writer);
+//        puts(sb.GetString());
 
         // Put the data int the struct
         if (document.HasMember("data")) {
@@ -564,7 +564,7 @@ bool Streaming::loadPancakeSwapPrices() {
                         quote.token0Address = pairs[i]["token0"]["id"].GetString();
                         quote.token0Price =
                                 std::stod(pairs[i]["token0Price"].GetString());
-                        //quote.token0derivedBNB = std::stod(pairs[i]["derivedBNB"].GetString());
+                        quote.token0derivedBNB = std::stod(pairs[i]["token0"]["derivedBNB"].GetString());
 
                         // Token 1
                         quote.token1Symbol = pairs[i]["token1"]["symbol"].GetString();
@@ -573,7 +573,7 @@ bool Streaming::loadPancakeSwapPrices() {
                         quote.token1Address = pairs[i]["token1"]["id"].GetString();
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
-                        //quote.token1derivedBNB = std::stod(pairs[i]["derivedBNB"].GetString());
+                        quote.token1derivedBNB = std::stod(pairs[i]["token1"]["derivedBNB"].GetString());
 
                         if (quote.token0Address.empty() || quote.token1Address.empty()) {
                             spdlog::warn("PancakeSwap problem with pair: {} there's no address", quote.poolID);

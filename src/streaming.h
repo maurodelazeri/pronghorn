@@ -59,9 +59,7 @@ private:
 
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
-    std::unique_ptr<httplib::SSLClient> graphRequest_;
-
-    std::unique_ptr<httplib::SSLClient> http_request_;
+    std::unique_ptr<httplib::Client> graphRequest_;
 
     quotesTable quotes_;
     connectionsTable connections_;
