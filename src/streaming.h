@@ -80,7 +80,7 @@ public:
 
     ~Streaming();
 
-    void start();
+    [[noreturn]] void start();
 
     void rungWebServer();
 };

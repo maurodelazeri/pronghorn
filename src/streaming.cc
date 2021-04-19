@@ -20,34 +20,25 @@ Streaming::Streaming() {
 
 Streaming::~Streaming() {}
 
-void Streaming::start() {
+[[noreturn]] void Streaming::start() {
     system_debug_ = (strcasecmp("true", utils::getEnvVar("DEBUG").c_str()) == 0);
     if (system_debug_) {
         spdlog::info("DEBUG MODE IS ENABLED");
     }
 
-    // Websocket
-    //connect();
-//    load_active_pools();
+//    loadPancakeSwapPrices();
 //    rungWebServer();
-
-//    Arbitrage arbitrage;
-//    std::string json = R"({ "starting_volume": 5.1, "output": "", "exchange": [ "PANCAKESWAP", "PANCAKESWAP", "PANCAKESWAP" ], "addr": [ "0xae13d989dac2f0debff460ac112a837c89baa7cd", "0x749aa89220f807242888782b59d599fe933eecb1", "0x749aa89220f807242888782b59d599fe933eecb1", "0xed24fc36d5ee211ea25a80239fb8c4cfd80f12ee", "0xed24fc36d5ee211ea25a80239fb8c4cfd80f12ee", "0xae13d989dac2f0debff460ac112a837c89baa7cd" ], "pool": [ ] })";
-//    executeArbitrage(arbitrage, json);
-//    exit(0);
 
     while (true) {
         auto elapsed = make_unique<Elapsed>("Arb Cycle");
         quotes_.clear();
         connections_.clear();
         loadPancakeSwapPrices();
-        spdlog::info("{} quotes located", quotes_.size());
+        spdlog::info("{} quotes loaded", quotes_.size());
         runCycle();
         spdlog::info("Waiting {} seconds before trying again", 10);
         sleep(10);
     }
-
-    rungWebServer();
 }
 
 void Streaming::rungWebServer() {
@@ -105,6 +96,7 @@ void Streaming::rungWebServer() {
             utils::exec(command.c_str());
         });
 
+        spdlog::info("Webserver listening on: 0.0.0.0:{}", 8181);
         server_.listen("0.0.0.0", 8181);
     } catch (std::exception &e) {
         spdlog::error("Webserver error: {}", e.what());

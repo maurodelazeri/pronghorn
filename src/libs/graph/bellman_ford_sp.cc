@@ -188,13 +188,13 @@ bool BellmanFordSP::check(const EdgeWeightedDigraph& G, int s) {
     } else { // no negative cycle reachable from source
         // check that distTo[v] and edgeTo[v] are consistent
         if (_distTo[s] != 0.0 || _edgeTo[s] != nullptr) {
-            printf("distanceTo[s] and edgeTo[s] inconsistent\n");
+            printf("distanceTo[s] and edgeTo[s] inconsistent\n %f %s\n",_distTo[s], _edgeTo[s]->toString().c_str());
             return false;
         }
         for (int v = 0; v < G.V(); v++) {
             if (v == s) continue;
             if (_edgeTo[v] == nullptr && _distTo[v] != std::numeric_limits<double>::max()) {
-                printf("distTo[] and edgeTo[] inconsistent\n");
+                printf("distTo[] and edgeTo[] inconsistent\n %f %s\n", _distTo[v], _edgeTo[s]->toString().c_str());
                 return false;
             }
         }
