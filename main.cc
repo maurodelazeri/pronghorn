@@ -18,7 +18,5 @@ int main() {
     std::unique_ptr<Streaming> stream = std::make_unique<Streaming>();
     stream->start();
 
-    sleep(1000);
-
     return 0;
 }

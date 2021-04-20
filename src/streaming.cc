@@ -31,6 +31,9 @@ Streaming::~Streaming() {}
 
     while (true) {
         runCycle();
+
+        spdlog::info("Waiting 10s before next check.");
+
         sleep(10);
     }
 }
@@ -107,9 +110,9 @@ void Streaming::rungWebServer() {
 
 
 void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
-                                          std::unordered_map<std::string, Quotes> &quotes,
-                                          std::unordered_map<std::string, std::vector<Quotes>> &connections,
-                                          std::unordered_map<std::string, int64_t> &seq_mapping) {
+                                         std::unordered_map<std::string, Quotes> &quotes,
+                                         std::unordered_map<std::string, std::vector<Quotes>> &connections,
+                                         std::unordered_map<std::string, int64_t> &seq_mapping) {
     std::unordered_map<std::string, bool> connections_mapping;
 
     for (auto const &[_, data] : quotes) {
@@ -213,7 +216,7 @@ void Streaming::runCycle() {
     }
 
     // Arb opportunities found
-    std::vector <Arbitrage> arbitrages;
+    std::vector<Arbitrage> arbitrages;
 
     spdlog::info("Checking arbitrage opportunities");
     std::unordered_map<std::string, bool> hash;
@@ -222,7 +225,7 @@ void Streaming::runCycle() {
         BellmanFordSP spt(G, i);
 
         if (spt.hasNegativeCycle()) {
-            stack < DirectedEdge * > edges(spt.negativeCycle());
+            stack<DirectedEdge *> edges(spt.negativeCycle());
             std::string output;
             double stake = 1;
             double final_stake = stake;
@@ -251,6 +254,7 @@ void Streaming::runCycle() {
                 edges.pop();
             }
 
+            // We can have multiple executions with the same path, so, lets make sure we get only one
             const std::string executionhash = md5_from_file(output);
             if (hash.count(executionhash)) {
                 // if the hash already exist, we dont need to add it again
@@ -261,14 +265,11 @@ void Streaming::runCycle() {
             arbitrage.output = output;
 
             // Only if starts with WBNB
-//            if (arbitrage.addr[0] == "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
-//                // Only pancakeswap
-//                for (auto const &exchange : arbitrage.exchange) {
-//                    if (exchange != "BURGERSWAP") {
-//                        arbitrages.emplace_back(arbitrage);
-//                    }
-//                }
-//            }
+            // Mainnet and Testnet addresses
+            if (arbitrage.addr[0] == "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c" ||
+                arbitrage.addr[0] == "0xae13d989dac2f0debff460ac112a837c89baa7cd") {
+                arbitrages.emplace_back(arbitrage);
+            }
 
             cout << output << endl;
         } else {
