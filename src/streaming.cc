@@ -30,13 +30,7 @@ Streaming::~Streaming() {}
 //    rungWebServer();
 
     while (true) {
-        auto elapsed = make_unique<Elapsed>("Arb Cycle");
-        quotes_.clear();
-        connections_.clear();
-        loadPancakeSwapPrices();
-        spdlog::info("{} quotes loaded", quotes_.size());
         runCycle();
-        spdlog::info("Waiting {} seconds before trying again", 10);
         sleep(10);
     }
 }
@@ -50,33 +44,41 @@ void Streaming::rungWebServer() {
 
         server_.Get("/connections", [this](const httplib::Request &req, httplib::Response &res) {
             // Logic
-            std::unordered_map<std::string, int> seq_mapping;
-            std::vector <std::string> result;
+            std::unordered_map<std::string, int64_t> seq_mapping;
+            std::unordered_map<std::string, std::vector<Quotes>> connections;
+            std::vector<std::string> result;
+            std::unordered_map<std::string, Quotes> quotes;
+
+            // Load the data
+            if (!loadPancakeSwapPrices(quotes, connections)) {
+                res.set_content("No quotes", "text/plain");
+                return;
+            }
 
             // Map unique symbols across all platforms
             int position = 0;
-            {
-                for (auto const &[key, _] : connections_) {
-                    // remove the exchange, we want only the symbol
-                    std::string addr = key;
-                    size_t pos = addr.find('_');
-                    addr.erase(0, pos + 1);
-                    if (seq_mapping.count(addr) == 0) {
-                        seq_mapping[addr] = position;
-                        position++;
-                    }
+            for (auto const &[key, _] : connections) {
+                // remove the exchange, we want only the symbol
+                std::string symbol = key;
+                size_t pos = symbol.find('-');
+                symbol.erase(0, pos + 1);
+                if (seq_mapping.count(symbol) == 0) {
+                    seq_mapping[symbol] = position;
+                    position++;
                 }
             }
 
             // Build the direct edges
-            std::vector < DirectedEdge * > directedEdge;
-            buildEdgeWeightedDigraph(directedEdge, seq_mapping);
+            std::vector<DirectedEdge *> directedEdge;
+            buildEdgeWeightedDigraph(directedEdge, quotes, connections, seq_mapping);
             EdgeWeightedDigraph G(position);
 
             // backwards loop to maintain the mapping of edge with asset
-            for (auto x = directedEdge.size(); x-- > 0;) {
+            for (int x = directedEdge.size(); x-- > 0;) {
                 G.addEdge(directedEdge[x]);
             }
+
+            cout << G.toString() << endl;
 
             auto uuid_v4 = sole::uuid4().str();
 
@@ -103,113 +105,106 @@ void Streaming::rungWebServer() {
     }
 }
 
+
 void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
-                                         std::unordered_map<std::string, int> &seq_mapping) {
+                                          std::unordered_map<std::string, Quotes> &quotes,
+                                          std::unordered_map<std::string, std::vector<Quotes>> &connections,
+                                          std::unordered_map<std::string, int64_t> &seq_mapping) {
+    std::unordered_map<std::string, bool> connections_mapping;
 
-    try {
-        std::unordered_map<std::string, bool> connections_mapping;
+    for (auto const &[_, data] : quotes) {
+        for (auto const &x : connections[data.protocol + "-" + data.token0Symbol]) {
+            std::string key;
+            key.append(x.token0Symbol).append("-").append(x.token1Symbol).append("-").append(x.id);
+            if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
 
-        for (auto const &[_, data] : quotes_) {
-            {
-                connectionsTable::accessor connections_assessor1;
-                connections_.find(connections_assessor1, data.protocol + "_" + data.token0Address);
+                Asset asset_0;
+                asset_0.quoteId = x.id;
+                asset_0.symbol = x.token0Symbol;
+                asset_0.address = x.token0Address;
+                asset_0.exchange = x.protocol;
+                asset_0.poolID = x.poolID;
+                asset_0.decimals = x.token0decimals;
 
-                for (auto const &x : connections_assessor1->second) {
-                    std::string key;
-                    key.append(x.token0Address).append("_").append(x.token1Address).append("_").append(x.id);
-                    if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
+                Asset asset_1;
+                asset_1.quoteId = x.id;
+                asset_1.symbol = x.token1Symbol;
+                asset_1.address = x.token1Address;
+                asset_1.exchange = x.protocol;
+                asset_1.poolID = x.poolID;
+                asset_1.decimals = x.token1decimals;
 
-                        Asset asset_0;
-                        asset_0.quoteId = x.id;
-                        asset_0.symbol = x.token0Symbol;
-                        asset_0.address = x.token0Address;
-                        asset_0.exchange = x.protocol;
-                        asset_0.poolID = x.poolID;
-                        asset_0.decimals = x.token0decimals;
+                connections_mapping[key] = true;
 
-                        Asset asset_1;
-                        asset_1.quoteId = x.id;
-                        asset_1.symbol = x.token1Symbol;
-                        asset_1.address = x.token1Address;
-                        asset_1.exchange = x.protocol;
-                        asset_1.poolID = x.poolID;
-                        asset_1.decimals = x.token1decimals;
-
-                        connections_mapping[key] = true;
-
-                        auto *e = new DirectedEdge(seq_mapping[x.token1Address],
-                                                   seq_mapping[x.token0Address],
-//                                               x.token0Price, asset_1, asset_0);
-                                                   -std::log(x.token0Price), asset_1, asset_0);
-                        directedEdge.emplace_back(e);
-                    }
-                }
-            }
-
-            {
-                connectionsTable::accessor connections_assessor2;
-                connections_.find(connections_assessor2, data.protocol + "_" + data.token1Address);
-                for (auto const &x : connections_assessor2->second) {
-                    std::string key;
-                    key.append(x.token1Address).append("_").append(x.token0Address).append("_").append(x.id);
-                    if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
-
-                        Asset asset_0;
-                        asset_0.quoteId = x.id;
-                        asset_0.symbol = x.token0Symbol;
-                        asset_0.address = x.token0Address;
-                        asset_0.exchange = x.protocol;
-                        asset_0.poolID = x.poolID;
-                        asset_0.decimals = x.token0decimals;
-
-                        Asset asset_1;
-                        asset_1.quoteId = x.id;
-                        asset_1.symbol = x.token1Symbol;
-                        asset_1.address = x.token1Address;
-                        asset_1.exchange = x.protocol;
-                        asset_1.poolID = x.poolID;
-                        asset_1.decimals = x.token1decimals;
-
-                        connections_mapping[key] = true;
-
-                        auto *e = new DirectedEdge(seq_mapping[x.token0Address],
-                                                   seq_mapping[x.token1Address],
-//                                               x.token1Price, asset_0, asset_1);
-                                                   -std::log(x.token1Price), asset_0, asset_1);
-                        directedEdge.emplace_back(e);
-                    }
-                }
+                auto *e = new DirectedEdge(seq_mapping[x.token1Symbol],
+                                           seq_mapping[x.token0Symbol],
+//                                           x.token0Price, asset_1, asset_0);
+                                           -std::log(x.token0Price), asset_1, asset_0);
+                directedEdge.emplace_back(e);
             }
         }
-    } catch (std::exception &e) {
-        spdlog::error("buildEdgeWeightedDigraph error: {}", e.what());
+
+        for (auto const &x : connections[data.protocol + "-" + data.token1Symbol]) {
+            std::string key;
+            key.append(x.token1Symbol).append("-").append(x.token0Symbol).append("-").append(x.id);
+            if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
+
+                Asset asset_0;
+                asset_0.quoteId = x.id;
+                asset_0.symbol = x.token0Symbol;
+                asset_0.address = x.token0Address;
+                asset_0.exchange = x.protocol;
+                asset_0.poolID = x.poolID;
+                asset_0.decimals = x.token0decimals;
+
+                Asset asset_1;
+                asset_1.quoteId = x.id;
+                asset_1.symbol = x.token1Symbol;
+                asset_1.address = x.token1Address;
+                asset_1.exchange = x.protocol;
+                asset_1.poolID = x.poolID;
+                asset_1.decimals = x.token1decimals;
+
+                connections_mapping[key] = true;
+
+                auto *e = new DirectedEdge(seq_mapping[x.token0Symbol],
+                                           seq_mapping[x.token1Symbol],
+//                                           x.token1Price, asset_0, asset_1);
+                                           -std::log(x.token1Price), asset_0, asset_1);
+                directedEdge.emplace_back(e);
+            }
+        }
     }
 }
 
 void Streaming::runCycle() {
-    // Logic
-    std::unordered_map<std::string, int> seq_mapping;
-    std::vector <std::string> result;
+    auto elapsed = make_unique<Elapsed>("Arb Cycle");
+    std::unordered_map<std::string, int64_t> seq_mapping;
+    std::unordered_map<std::string, std::vector<Quotes>> connections;
+    std::vector<std::string> result;
+    std::unordered_map<std::string, Quotes> quotes;
+
+    // Load the data
+    if (!loadPancakeSwapPrices(quotes, connections)) {
+        return;
+    }
 
     // Map unique symbols across all platforms
     int position = 0;
-    {
-        for (auto &connection : connections_) {
-            // remove the exchange, we want only the symbol
-            std::string addr = connection.first;
-            size_t pos = addr.find('_');
-            addr.erase(0, pos + 1);
-            if (seq_mapping.count(addr) == 0) {
-                seq_mapping[addr] = position;
-                position++;
-            }
+    for (auto const &[key, _] : connections) {
+        // remove the exchange, we want only the symbol
+        std::string symbol = key;
+        size_t pos = symbol.find('-');
+        symbol.erase(0, pos + 1);
+        if (seq_mapping.count(symbol) == 0) {
+            seq_mapping[symbol] = position;
+            position++;
         }
     }
 
     // Build the direct edges
-    spdlog::info("Building directed edges");
-    std::vector < DirectedEdge * > directedEdge;
-    buildEdgeWeightedDigraph(directedEdge, seq_mapping);
+    std::vector<DirectedEdge *> directedEdge;
+    buildEdgeWeightedDigraph(directedEdge, quotes, connections, seq_mapping);
     EdgeWeightedDigraph G(position);
 
     // Backwards loop to maintain the mapping of edge with asset with the right position
@@ -217,6 +212,7 @@ void Streaming::runCycle() {
         G.addEdge(directedEdge[x]);
     }
 
+    // Arb opportunities found
     std::vector <Arbitrage> arbitrages;
 
     spdlog::info("Checking arbitrage opportunities");
@@ -265,16 +261,16 @@ void Streaming::runCycle() {
             arbitrage.output = output;
 
             // Only if starts with WBNB
-            if (arbitrage.addr[0] == "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
-                // Only pancakeswap
-                for (auto const &exchange : arbitrage.exchange) {
-                    if (exchange != "BURGERSWAP") {
-                        arbitrages.emplace_back(arbitrage);
-                    }
-                }
-            }
+//            if (arbitrage.addr[0] == "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
+//                // Only pancakeswap
+//                for (auto const &exchange : arbitrage.exchange) {
+//                    if (exchange != "BURGERSWAP") {
+//                        arbitrages.emplace_back(arbitrage);
+//                    }
+//                }
+//            }
 
-            //cout << output << endl;
+            cout << output << endl;
         } else {
             // cout << "No negative cycle" << endl;
         }
@@ -283,9 +279,9 @@ void Streaming::runCycle() {
     simulateArbitrage(arbitrages);
 }
 
-void Streaming::simulateArbitrage(const std::vector <Arbitrage> &arbitrages) {
+void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
     try {
-        if (arbitrages.empty()){
+        if (arbitrages.empty()) {
             spdlog::info("No Opportunities found");
             return;
         }
@@ -338,7 +334,7 @@ void Streaming::simulateArbitrage(const std::vector <Arbitrage> &arbitrages) {
             request_document.AddMember("starting_volume", val, allocator);
 
             rapidjson::StringBuffer sb;
-            rapidjson::PrettyWriter <rapidjson::StringBuffer> writer(sb);
+            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
             request_document.Accept(writer);
 
             std::string url = "/simulation";
@@ -505,7 +501,8 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
     }
 }
 
-bool Streaming::loadPancakeSwapPrices() {
+bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &quotes,
+                                      std::unordered_map<std::string, std::vector<Quotes>> &connections) {
     try {
         rapidjson::Document document;
 
@@ -530,14 +527,9 @@ bool Streaming::loadPancakeSwapPrices() {
         }
 
         if (!document.IsObject()) {
-            spdlog::error("PancakeSwap subgraph error: {}", "No data");
+            spdlog::error("PancakeSwap subgraph  error: {}", "No data");
             return false;
         }
-
-//        rapidjson::StringBuffer sb;
-//        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-//        document.Accept(writer);
-//        puts(sb.GetString());
 
         // Put the data int the struct
         if (document.HasMember("data")) {
@@ -554,52 +546,39 @@ bool Streaming::loadPancakeSwapPrices() {
                         quote.token0Symbol = pairs[i]["token0"]["symbol"].GetString();
                         quote.token0decimals = std::stoi(
                                 pairs[i]["token0"]["decimals"].GetString());
+                        quote.token0derivedBNB = std::stod(
+                                pairs[i]["token0"]["derivedBNB"].GetString());
                         quote.token0Address = pairs[i]["token0"]["id"].GetString();
                         quote.token0Price =
                                 std::stod(pairs[i]["token0Price"].GetString());
-                        quote.token0derivedBNB = std::stod(pairs[i]["token0"]["derivedBNB"].GetString());
 
                         // Token 1
                         quote.token1Symbol = pairs[i]["token1"]["symbol"].GetString();
                         quote.token1decimals = std::stoi(
                                 pairs[i]["token1"]["decimals"].GetString());
                         quote.token1Address = pairs[i]["token1"]["id"].GetString();
+                        quote.token1derivedBNB = std::stod(
+                                pairs[i]["token1"]["derivedBNB"].GetString());
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
-                        quote.token1derivedBNB = std::stod(pairs[i]["token1"]["derivedBNB"].GetString());
 
-                        if (quote.token0Address.empty() || quote.token1Address.empty()) {
-                            spdlog::warn("PancakeSwap problem with pair: {} there's no address", quote.poolID);
+                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
+                            rapidjson::StringBuffer sb;
+                            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+                            pairs[i].Accept(writer);
+                            puts(sb.GetString());
+                            spdlog::warn("PancakeSwap problem with pair: {}", sb.GetString());
                             continue;
                         }
 
-                        // Quotes
-                        {
-                            quotesTable::accessor quotes_assessor;
-                            quotes_.find(quotes_assessor, quote.id);
-                            if (quotes_assessor.empty()) {
-                                quotes_.insert(quotes_assessor, quote.id);
-                            }
-                            quotes_assessor->second = quote;
-                        }
-                        // Connections
-                        {
-                            connectionsTable::accessor connections_assessor;
-                            connections_.find(connections_assessor, quote.protocol + "_" + quote.token0Address);
-                            if (connections_assessor.empty()) {
-                                connections_.insert(connections_assessor, quote.protocol + "_" + quote.token0Address);
-                            }
-                            connections_assessor->second.emplace_back(quote);
-                        }
-
-                        {
-                            connectionsTable::accessor connections_assessor;
-                            connections_.find(connections_assessor, quote.protocol + "_" + quote.token1Address);
-                            if (connections_assessor.empty()) {
-                                connections_.insert(connections_assessor, quote.protocol + "_" + quote.token1Address);
-                            }
-                            connections_assessor->second.emplace_back(quote);
-                        }
+                        // Unique ID
+                        quotes[quote.id] = quote;
+                        connections[quote.protocol + "-" + quote.token1Symbol].emplace_back(quote);
+                        connections[quote.protocol + "-" + quote.token0Symbol].emplace_back(quote);
+                    }
+                    if (quotes.empty()) {
+                        spdlog::warn("No quotes for PancakeSwap");
+                        return false;
                     }
                 } else {
                     return false;

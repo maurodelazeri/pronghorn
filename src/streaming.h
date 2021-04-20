@@ -18,7 +18,6 @@
 #include "libs/misc/elapsed.h"
 #include "libs/misc/md5.h"
 #include "libs/match.h"
-
 #include "libs/graph/directed_edge.h"
 #include "libs/graph/edge_weighted_digraph.h"
 #include "libs/graph/bellman_ford_sp.h"
@@ -48,9 +47,6 @@ struct Arbitrage {
     std::string output;
 };
 
-typedef tbb::concurrent_hash_map<string, Quotes> quotesTable;
-typedef tbb::concurrent_hash_map<string, std::vector<Quotes>> connectionsTable;
-
 class Streaming {
 private:
     bool system_debug_;
@@ -61,20 +57,20 @@ private:
     std::unique_ptr<httplib::Client> nodeRequest_;
     std::unique_ptr<httplib::Client> graphRequest_;
 
-    quotesTable quotes_;
-    connectionsTable connections_;
-
-    bool loadPancakeSwapPrices();
+    bool loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
 
     void runCycle();
 
     void buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
-                                  std::unordered_map<std::string, int> &seq_mapping);
+                                  std::unordered_map<std::string, Quotes> &quotes,
+                                  std::unordered_map<std::string, std::vector<Quotes>> &connections,
+                                  std::unordered_map<std::string, int64_t> &seq_mapping);
 
     void simulateArbitrage(const std::vector<Arbitrage> &arbitrages);
 
     void executeArbitrage(const Arbitrage &arbitrage, const std::string &execution_json);
 
+    std::unordered_map<int,std::string> mauro;
 public:
     Streaming();
 
