@@ -47,7 +47,7 @@ void Streaming::rungWebServer() {
 
         server_.Get("/connections", [this](const httplib::Request &req, httplib::Response &res) {
             // Logic
-            std::unordered_map<std::string, int64_t> seq_mapping;
+            std::unordered_map<std::string, int> seq_mapping;
             std::unordered_map<std::string, std::vector<Quotes>> connections;
             std::vector<std::string> result;
             std::unordered_map<std::string, Quotes> quotes;
@@ -62,11 +62,11 @@ void Streaming::rungWebServer() {
             int position = 0;
             for (auto const &[key, _] : connections) {
                 // remove the exchange, we want only the symbol
-                std::string symbol = key;
-                size_t pos = symbol.find('-');
-                symbol.erase(0, pos + 1);
-                if (seq_mapping.count(symbol) == 0) {
-                    seq_mapping[symbol] = position;
+                std::string addr = key;
+                size_t pos = addr.find('_');
+                addr.erase(0, pos + 1);
+                if (seq_mapping.count(addr) == 0) {
+                    seq_mapping[addr] = position;
                     position++;
                 }
             }
@@ -77,11 +77,9 @@ void Streaming::rungWebServer() {
             EdgeWeightedDigraph G(position);
 
             // backwards loop to maintain the mapping of edge with asset
-            for (int x = directedEdge.size(); x-- > 0;) {
+            for (auto x = directedEdge.size(); x-- > 0;) {
                 G.addEdge(directedEdge[x]);
             }
-
-            cout << G.toString() << endl;
 
             auto uuid_v4 = sole::uuid4().str();
 
@@ -112,20 +110,20 @@ void Streaming::rungWebServer() {
 void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
                                          std::unordered_map<std::string, Quotes> &quotes,
                                          std::unordered_map<std::string, std::vector<Quotes>> &connections,
-                                         std::unordered_map<std::string, int64_t> &seq_mapping) {
+                                         std::unordered_map<std::string, int> &seq_mapping) {
     std::unordered_map<std::string, bool> connections_mapping;
 
     for (auto const &[_, data] : quotes) {
-        for (auto const &x : connections[data.protocol + "-" + data.token0Symbol]) {
+        for (auto const &x : connections[data.protocol + "_" + data.token0Address]) {
             std::string key;
-            key.append(x.token0Symbol).append("-").append(x.token1Symbol).append("-").append(x.id);
+            key.append(x.token0Address).append("_").append(x.token1Address).append("_").append(x.id);
             if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
 
                 Asset asset_0;
                 asset_0.quoteId = x.id;
                 asset_0.symbol = x.token0Symbol;
                 asset_0.address = x.token0Address;
-                asset_0.exchange = x.protocol;
+                asset_0.protocol = x.protocol;
                 asset_0.poolID = x.poolID;
                 asset_0.decimals = x.token0decimals;
 
@@ -133,30 +131,30 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
                 asset_1.quoteId = x.id;
                 asset_1.symbol = x.token1Symbol;
                 asset_1.address = x.token1Address;
-                asset_1.exchange = x.protocol;
+                asset_1.protocol = x.protocol;
                 asset_1.poolID = x.poolID;
                 asset_1.decimals = x.token1decimals;
 
                 connections_mapping[key] = true;
 
-                auto *e = new DirectedEdge(seq_mapping[x.token1Symbol],
-                                           seq_mapping[x.token0Symbol],
+                auto *e = new DirectedEdge(seq_mapping[x.token1Address],
+                                           seq_mapping[x.token0Address],
 //                                           x.token0Price, asset_1, asset_0);
                                            -std::log(x.token0Price), asset_1, asset_0);
                 directedEdge.emplace_back(e);
             }
         }
 
-        for (auto const &x : connections[data.protocol + "-" + data.token1Symbol]) {
+        for (auto const &x : connections[data.protocol + "_" + data.token1Address]) {
             std::string key;
-            key.append(x.token1Symbol).append("-").append(x.token0Symbol).append("-").append(x.id);
+            key.append(x.token1Address).append("_").append(x.token0Address).append("_").append(x.id);
             if (connections_mapping.count(key) == 0 && connections_mapping.count(key) == 0) {
 
                 Asset asset_0;
                 asset_0.quoteId = x.id;
                 asset_0.symbol = x.token0Symbol;
                 asset_0.address = x.token0Address;
-                asset_0.exchange = x.protocol;
+                asset_0.protocol = x.protocol;
                 asset_0.poolID = x.poolID;
                 asset_0.decimals = x.token0decimals;
 
@@ -164,14 +162,14 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
                 asset_1.quoteId = x.id;
                 asset_1.symbol = x.token1Symbol;
                 asset_1.address = x.token1Address;
-                asset_1.exchange = x.protocol;
+                asset_1.protocol = x.protocol;
                 asset_1.poolID = x.poolID;
                 asset_1.decimals = x.token1decimals;
 
                 connections_mapping[key] = true;
 
-                auto *e = new DirectedEdge(seq_mapping[x.token0Symbol],
-                                           seq_mapping[x.token1Symbol],
+                auto *e = new DirectedEdge(seq_mapping[x.token0Address],
+                                           seq_mapping[x.token1Address],
 //                                           x.token1Price, asset_0, asset_1);
                                            -std::log(x.token1Price), asset_0, asset_1);
                 directedEdge.emplace_back(e);
@@ -182,25 +180,27 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
 
 void Streaming::runCycle() {
     auto elapsed = make_unique<Elapsed>("Arb Cycle");
-    std::unordered_map<std::string, int64_t> seq_mapping;
+    // Logic
+    std::unordered_map<std::string, int> seq_mapping;
     std::unordered_map<std::string, std::vector<Quotes>> connections;
     std::vector<std::string> result;
     std::unordered_map<std::string, Quotes> quotes;
+    std::vector<Arbitrage> arbitrages;
 
     // Load the data
     if (!loadPancakeSwapPrices(quotes, connections)) {
         return;
     }
 
-    // Map unique symbols across all platforms
+    // Map unique addrs across all platforms
     int position = 0;
     for (auto const &[key, _] : connections) {
-        // remove the exchange, we want only the symbol
-        std::string symbol = key;
-        size_t pos = symbol.find('-');
-        symbol.erase(0, pos + 1);
-        if (seq_mapping.count(symbol) == 0) {
-            seq_mapping[symbol] = position;
+        // remove the exchange, we want only the addr
+        std::string addr = key;
+        size_t pos = addr.find('_');
+        addr.erase(0, pos + 1);
+        if (seq_mapping.count(addr) == 0) {
+            seq_mapping[addr] = position;
             position++;
         }
     }
@@ -214,9 +214,6 @@ void Streaming::runCycle() {
     for (auto x = directedEdge.size(); x-- > 0;) {
         G.addEdge(directedEdge[x]);
     }
-
-    // Arb opportunities found
-    std::vector<Arbitrage> arbitrages;
 
     spdlog::info("Checking arbitrage opportunities");
     std::unordered_map<std::string, bool> hash;
@@ -233,7 +230,7 @@ void Streaming::runCycle() {
             Arbitrage arbitrage;
             while (!edges.empty()) {
                 char *m1 = nullptr;
-                asprintf(&m1, "%10.5f %s-%s-%s ", final_stake, edges.top()->asset_from().exchange.c_str(),
+                asprintf(&m1, "%10.5f %s-%s-%s ", final_stake, edges.top()->asset_from().protocol.c_str(),
                          edges.top()->asset_from().symbol.c_str(), edges.top()->asset_from().address.c_str());
                 output.append(m1);
                 free(m1);
@@ -241,14 +238,14 @@ void Streaming::runCycle() {
                 final_stake *= std::exp(-edges.top()->weight());
 
                 char *m2 = nullptr;
-                asprintf(&m2, "= %10.5f %s-%s-%s\n", final_stake, edges.top()->asset_to().exchange.c_str(),
+                asprintf(&m2, "= %10.5f %s-%s-%s\n", final_stake, edges.top()->asset_to().protocol.c_str(),
                          edges.top()->asset_to().symbol.c_str(), edges.top()->asset_to().address.c_str());
                 output.append(m2);
                 free(m2);
 
                 arbitrage.addr.emplace_back(edges.top()->asset_from().address);
                 arbitrage.addr.emplace_back(edges.top()->asset_to().address);
-                arbitrage.exchange.emplace_back(edges.top()->asset_to().exchange);
+                arbitrage.exchange.emplace_back(edges.top()->asset_to().protocol);
                 arbitrage.pool.emplace_back(edges.top()->asset_to().poolID);
 
                 edges.pop();
@@ -270,8 +267,7 @@ void Streaming::runCycle() {
                 arbitrage.addr[0] == "0xae13d989dac2f0debff460ac112a837c89baa7cd") {
                 arbitrages.emplace_back(arbitrage);
             }
-
-            cout << output << endl;
+            //cout << output << endl;
         } else {
             // cout << "No negative cycle" << endl;
         }
@@ -375,7 +371,6 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
             if (document.HasMember("profit")) {
                 const rapidjson::Value &profit = document["profit"];
-                //spdlog::info("Simulation of profit: {}", profit.GetDouble());
                 if (final_profit < profit.GetDouble()) {
                     final_profit = profit.GetDouble();
                     execution_json = sb.GetString();
@@ -388,40 +383,40 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
         if (final_profit > 0) {
             spdlog::info("Profitable operation found {}", final_profit);
 
-            if (arbitrages[execution_index].exchange.size() == 2) {
-                final_profit -= 0.00182082;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 3) {
-                final_profit -= 0.00313629;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 4) {
-                final_profit -= 0.00399482;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 5) {
-                final_profit -= 0.0047071;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 6) {
-                final_profit -= 0.00525459;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else {
-                spdlog::info("Execution has more than 6 hoops, we are not handling it");
-                return;
-            }
+//            if (arbitrages[execution_index].exchange.size() == 2) {
+//                final_profit -= 0.00182082;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//            } else if (arbitrages[execution_index].exchange.size() == 3) {
+//                final_profit -= 0.00313629;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//            } else if (arbitrages[execution_index].exchange.size() == 4) {
+//                final_profit -= 0.00399482;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//            } else if (arbitrages[execution_index].exchange.size() == 5) {
+//                final_profit -= 0.0047071;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//            } else if (arbitrages[execution_index].exchange.size() == 6) {
+//                final_profit -= 0.00525459;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//                final_profit -= initial_volume_ * 0.003;
+//            } else {
+//                spdlog::info("Execution has more than 6 hoops, we are not handling it");
+//                return;
+//            }
 
             if (final_profit > 0) {
                 spdlog::info("Operation payload {}", arbitrages[execution_index].output);
@@ -563,19 +558,19 @@ bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &q
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
 
-                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
-                            rapidjson::StringBuffer sb;
-                            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-                            pairs[i].Accept(writer);
-                            puts(sb.GetString());
-                            spdlog::warn("PancakeSwap problem with pair: {}", sb.GetString());
-                            continue;
-                        }
+//                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
+//                            rapidjson::StringBuffer sb;
+//                            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+//                            pairs[i].Accept(writer);
+//                            puts(sb.GetString());
+//                            spdlog::warn("PancakeSwap problem with pair: {}", sb.GetString());
+//                            continue;
+//                        }
 
                         // Unique ID
                         quotes[quote.id] = quote;
-                        connections[quote.protocol + "-" + quote.token1Symbol].emplace_back(quote);
-                        connections[quote.protocol + "-" + quote.token0Symbol].emplace_back(quote);
+                        connections[quote.protocol + "_" + quote.token1Address].emplace_back(quote);
+                        connections[quote.protocol + "_" + quote.token0Address].emplace_back(quote);
                     }
                     if (quotes.empty()) {
                         spdlog::warn("No quotes for PancakeSwap");

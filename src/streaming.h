@@ -51,7 +51,7 @@ class Streaming {
 private:
     bool system_debug_;
 
-    double initial_volume_ = 0.1;
+    double initial_volume_ = 0.005;
 
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
@@ -64,7 +64,7 @@ private:
     void buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEdge,
                                   std::unordered_map<std::string, Quotes> &quotes,
                                   std::unordered_map<std::string, std::vector<Quotes>> &connections,
-                                  std::unordered_map<std::string, int64_t> &seq_mapping);
+                                  std::unordered_map<std::string, int> &seq_mapping);
 
     void simulateArbitrage(const std::vector<Arbitrage> &arbitrages);
 

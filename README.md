@@ -6,37 +6,32 @@ Zinnion DEFI streaming processor
 ## Pancakeswap
 
 ```
-  { 
-  pairs(
-      first: 1000
-      orderBy: reserveBNB
-      orderDirection: desc
-      where: {reserve0_gt: 0, reserve1_gt: 0}
-    ) {
+{
+  pairs(first: 1000, orderBy: reserveBNB, orderDirection: desc, 
+  where: {reserve0_gt: 0, reserve1_gt: 0}) {
+    id
+    token0 {
       id
-      token0 {
-        id
-        name
-        symbol
-        derivedBNB
-        decimals
-      }
-      token1 {
-        id
-        name
-        symbol
-        derivedBNB
-        decimals
-      }
-      token0Price
-      token1Price
-      reserve0
-      reserve1
-      volumeToken0
-      volumeToken1
-      reserveBNB
-      reserveUSD
+      name
+      symbol
+      derivedBNB
+      decimals
     }
+    token1 {
+      id
+      name
+      symbol
+      derivedBNB
+      decimals
+    }
+    reserve0
+    reserve1
+    volumeToken0
+    volumeToken1
+    reserveBNB
+    reserveUSD
+    token0Price
+    token1Price
   }
-
+}
 ```

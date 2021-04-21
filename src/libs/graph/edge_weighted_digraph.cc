@@ -261,7 +261,7 @@ string EdgeWeightedDigraph::getGraphviz() const {
             s.append("\"" + e->asset_from().symbol + "\"");
             s.append(" -> ");
             s.append("\"" + e->asset_to().symbol + "\"");
-            s.append("[label = \"" + std::to_string(e->weight()) + "_" + e->asset_from().exchange + "_" +
+            s.append("[label = \"" + std::to_string(e->weight()) + "_" + e->asset_from().protocol + "_" +
                      e->asset_from().poolID + "\"];\n");
             s.append("\t");
         }

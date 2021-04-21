@@ -7,7 +7,7 @@
 struct Asset {
     std::string quoteId{};
     std::string poolID{};
-    std::string exchange{};
+    std::string protocol{};
     std::string symbol{};
     std::string address{};
     int64_t decimals{};
