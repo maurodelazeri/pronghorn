@@ -380,6 +380,10 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             current_index++;
         }
 
+        // REMOVE THIS SHIT FROM HERE
+        executeArbitrage(arbitrages[execution_index], execution_json);
+        return;
+
         if (final_profit > 0) {
             spdlog::info("Profitable operation found {}", final_profit);
 
@@ -503,7 +507,7 @@ bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &q
         rapidjson::Document document;
 
         std::string url = "/subgraphs/name/maurodelazeri/exchange";
-        std::string data = R"({ "query": "{ pairs( first: 1000 orderBy: reserveBNB orderDirection: desc where: {reserve0_gt: 0, reserve1_gt: 0} ) { id token0 { id name symbol derivedBNB decimals } token1 { id name symbol derivedBNB decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveBNB reserveUSD token0Price token1Price } }"})";
+        std::string data = R"({ "query": "{ pairs( first: 1000 orderBy: reserveBNB orderDirection: desc where: {reserve0_gt: 0.1, reserve1_gt: 0.1} ) { id token0 { id name symbol derivedBNB decimals } token1 { id name symbol derivedBNB decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveBNB reserveUSD token0Price token1Price } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
