@@ -381,7 +381,12 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
         }
 
         // REMOVE THIS SHIT FROM HERE
-        executeArbitrage(arbitrages[execution_index], execution_json);
+        if (arbitrages.size() > 0) {
+            executeArbitrage(arbitrages[execution_index], execution_json);
+        }else{
+            cout << "nothing :(( " << endl;
+            exit(0);
+        }
         return;
 
         if (final_profit > 0) {
