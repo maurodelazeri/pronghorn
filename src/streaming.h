@@ -56,8 +56,11 @@ private:
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
     std::unique_ptr<httplib::Client> graphRequest_;
+    std::unique_ptr<httplib::SSLClient> graphDelayRequest_;
 
     bool loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
+
+    bool loadPancakeSwapDelayPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
 
     void runCycle();
 
