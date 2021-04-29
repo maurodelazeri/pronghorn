@@ -12,16 +12,10 @@ Streaming::Streaming() {
     nodeRequest_->set_connection_timeout(120);
 
     // The graph
-    graphRequest_ = std::make_unique<httplib::Client>(
-            "graph_bsc.zinnion.com", 7000
+    graphRequest_ = std::make_unique<httplib::SSLClient>(
+            "api.thegraph.com", 443
     );
-    graphRequest_->set_connection_timeout(15);
-
-    graphDelayRequest_ = std::make_unique<httplib::SSLClient>(
-            "api.pancakeswap.info", 443
-    );
-    graphDelayRequest_->set_connection_timeout(15);
-
+    graphRequest_->set_connection_timeout(30);
 }
 
 Streaming::~Streaming() {}
@@ -40,7 +34,7 @@ Streaming::~Streaming() {}
 
         spdlog::info("Waiting 10s before next check.");
 
-        sleep(240);
+        sleep(10);
     }
 }
 
@@ -59,7 +53,11 @@ void Streaming::rungWebServer() {
             std::unordered_map<std::string, Quotes> quotes;
 
             // Load the data
-            if (!loadPancakeSwapPrices(quotes, connections)) {
+            if (!loadUniSwapPrices(quotes, connections)) {
+                res.set_content("No quotes", "text/plain");
+                return;
+            }
+            if (!loadSushiSwapPrices(quotes, connections)) {
                 res.set_content("No quotes", "text/plain");
                 return;
             }
@@ -194,10 +192,10 @@ void Streaming::runCycle() {
     std::vector<Arbitrage> arbitrages;
 
     // Load the data
-    if (!loadPancakeSwapDelayPrices(quotes, connections)) {
+    if (!loadUniSwapPrices(quotes, connections)) {
         return;
     }
-//    if (!loadPancakeSwapPrices(quotes, connections)) {
+//    if (!loadSushiSwapPrices(quotes, connections)) {
 //        return;
 //    }
 
@@ -270,18 +268,20 @@ void Streaming::runCycle() {
             hash[executionhash] = true;
             arbitrage.output = output;
 
-            // Only if starts with WBNB
-            // Mainnet and Testnet addresses
-            if (arbitrage.addr[0] == "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" ||
-                arbitrage.addr[0] == "0xae13d989dac2f0debff460ac112a837c89baa7cd") {
+            //cout << output << endl;
+
+            // Only if starts with WETH
+            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c") {
                 arbitrages.emplace_back(arbitrage);
             }
+
             //cout << output << endl;
         } else {
             // cout << "No negative cycle" << endl;
         }
     }
-    // Send for execution
+
+// Send for execution
     simulateArbitrage(arbitrages);
 }
 
@@ -380,11 +380,13 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
             if (document.HasMember("profit")) {
                 const rapidjson::Value &profit = document["profit"];
-                // if (final_profit < profit.GetDouble()) {
+                //   if (final_profit < profit.GetDouble()) {
                 final_profit = profit.GetDouble();
                 execution_json = sb.GetString();
                 execution_index = current_index;
-                //   }
+
+                executeArbitrage(arbitrages[execution_index], execution_json);
+                //  }
             }
             current_index++;
         }
@@ -430,9 +432,7 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             if (final_profit > 0) {
                 spdlog::info("Operation payload {}", arbitrages[execution_index].output);
                 spdlog::info("Sending execution expecting {} BNB in returns.", final_profit);
-
                 cout << execution_json << endl;
-
                 executeArbitrage(arbitrages[execution_index], execution_json);
             } else {
                 spdlog::info("No Profitable profits profits after fees");
@@ -512,118 +512,35 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
     }
 }
 
-bool Streaming::loadPancakeSwapDelayPrices(std::unordered_map<std::string, Quotes> &quotes,
-                                           std::unordered_map<std::string, std::vector<Quotes>> &connections) {
+bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quotes,
+                                  std::unordered_map<std::string, std::vector<Quotes>> &connections) {
     try {
         rapidjson::Document document;
 
-        std::string url = "/api/pairs";
+        //std::string url = "/subgraphs/name/uniswap/uniswap-v2";
+        std::string url = "/subgraphs/name/maurodelazeri/uniswapv2-kovan";
 
-        auto res = graphDelayRequest_->Get(url.c_str());
-        if (res == nullptr) {
-            spdlog::error("PancakeSwap subgraph error: {}", "nullptr");
-            return false;
-        }
-
-        if (res.error()) {
-            spdlog::error("PancakeSwap subgraph error: {}", res.error());
-            return false;
-        }
-
-        // Parse the JSON
-        if (document.Parse(res->body.c_str()).HasParseError()) {
-            spdlog::error("PancakeSwap subgraph document parse error: {}", res->body.c_str());
-            return false;
-        }
-
-        if (!document.IsObject()) {
-            spdlog::error("PancakeSwap subgraph  error: {}", "No data");
-            return false;
-        }
-
-        // Put the data int the struct
-        if (document.HasMember("data")) {
-            const rapidjson::Value &pairs = document["data"];
-            for (rapidjson::Value::ConstMemberIterator iterator = pairs.MemberBegin();
-                 iterator != pairs.MemberEnd(); ++iterator) {
-
-                Quotes quote;
-                quote.id = sole::uuid4().str();
-                quote.protocol = "PANCAKESWAP";
-                quote.poolID = iterator->value["pair_address"].GetString();
-
-                // Token 0
-                quote.token0Symbol = iterator->value["base_symbol"].GetString();
-//                quote.token0decimals = std::stoi(
-//                        iterator->value["base_symbol"].GetString());
-//                quote.token0derivedBNB = std::stod(
-//                        pairs[i]["token0"]["derivedBNB"].GetString());
-
-                quote.token0Address = iterator->value["base_address"].GetString();
-                quote.token0Price =
-                        std::stod(iterator->value["price"].GetString());
-
-                // Token 1
-                quote.token1Symbol = iterator->value["quote_symbol"].GetString();
-//                quote.token1decimals = std::stoi(
-//                        pairs[i]["token1"]["decimals"].GetString());
-                quote.token1Address = iterator->value["quote_address"].GetString();
-//                quote.token1derivedBNB = std::stod(
-//                        pairs[i]["token1"]["derivedBNB"].GetString());
-                quote.token1Price =
-                        1 / std::stod(iterator->value["price"].GetString());
-
-                if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
-                    spdlog::warn("PancakeSwap problem with pair: {}", iterator->name.GetString());
-                    continue;
-                }
-
-                // Unique ID
-                quotes[quote.id] = quote;
-                connections[quote.protocol + "_" + quote.token1Address].emplace_back(quote);
-                connections[quote.protocol + "_" + quote.token0Address].emplace_back(quote);
-            }
-            if (quotes.empty()) {
-                spdlog::warn("No quotes for PancakeSwap");
-                return false;
-            }
-        } else {
-            return false;
-        }
-        return true;
-    } catch (std::exception &e) {
-        spdlog::error("PancakeSwap subgraph parse error: {}", e.what());
-    }
-    return false;
-}
-
-bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &quotes,
-                                      std::unordered_map<std::string, std::vector<Quotes>> &connections) {
-    try {
-        rapidjson::Document document;
-
-        std::string url = "/subgraphs/name/maurodelazeri/exchange";
-        std::string data = R"({ "query": "{ pairs( first: 100 orderBy: reserveBNB orderDirection: desc where: {reserve0_gt: 0.1, reserve1_gt: 0.1} ) { id token0 { id name symbol derivedBNB decimals } token1 { id name symbol derivedBNB decimals } reserve0 reserve1 volumeToken0 volumeToken1 reserveBNB reserveUSD token0Price token1Price } }"})";
+        std::string data = R"({ "query": "{ pairs( first: 1000, orderBy: reserveETH, orderDirection: desc ) { token0{ id symbol name decimals derivedETH } token1{ id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
-            spdlog::error("PancakeSwap subgraph error: {}", "nullptr");
+            spdlog::error("Uniswap subgraph error: {}", "nullptr");
             return false;
         }
 
         if (res.error()) {
-            spdlog::error("PancakeSwap subgraph error: {}", res.error());
+            spdlog::error("Uniswap subgraph error: {}", res.error());
             return false;
         }
 
         // Parse the JSON
         if (document.Parse(res->body.c_str()).HasParseError()) {
-            spdlog::error("PancakeSwap subgraph document parse error: {}", res->body.c_str());
+            spdlog::error("Uniswap subgraph document parse error: {}", res->body.c_str());
             return false;
         }
 
         if (!document.IsObject()) {
-            spdlog::error("PancakeSwap subgraph  error: {}", "No data");
+            spdlog::error("Uniswap subgraph error: {}", "No data");
             return false;
         }
 
@@ -635,15 +552,13 @@ bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &q
                     for (rapidjson::SizeType i = 0; i < pairs.Size(); i++) {
                         Quotes quote;
                         quote.id = sole::uuid4().str();
-                        quote.protocol = "PANCAKESWAP";
+                        quote.protocol = "UNISWAP";
                         quote.poolID = pairs[i]["id"].GetString();
 
                         // Token 0
                         quote.token0Symbol = pairs[i]["token0"]["symbol"].GetString();
                         quote.token0decimals = std::stoi(
                                 pairs[i]["token0"]["decimals"].GetString());
-                        quote.token0derivedBNB = std::stod(
-                                pairs[i]["token0"]["derivedBNB"].GetString());
                         quote.token0Address = pairs[i]["token0"]["id"].GetString();
                         quote.token0Price =
                                 std::stod(pairs[i]["token0Price"].GetString());
@@ -653,19 +568,17 @@ bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &q
                         quote.token1decimals = std::stoi(
                                 pairs[i]["token1"]["decimals"].GetString());
                         quote.token1Address = pairs[i]["token1"]["id"].GetString();
-                        quote.token1derivedBNB = std::stod(
-                                pairs[i]["token1"]["derivedBNB"].GetString());
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
 
-//                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
-//                            rapidjson::StringBuffer sb;
-//                            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-//                            pairs[i].Accept(writer);
-//                            puts(sb.GetString());
-//                            spdlog::warn("PancakeSwap problem with pair: {}", sb.GetString());
-//                            continue;
-//                        }
+                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
+                            rapidjson::StringBuffer sb;
+                            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+                            pairs[i].Accept(writer);
+                            puts(sb.GetString());
+                            spdlog::warn("Uniswap problem with pair: {}", sb.GetString());
+                            continue;
+                        }
 
                         // Unique ID
                         quotes[quote.id] = quote;
@@ -673,7 +586,7 @@ bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &q
                         connections[quote.protocol + "_" + quote.token0Address].emplace_back(quote);
                     }
                     if (quotes.empty()) {
-                        spdlog::warn("No quotes for PancakeSwap");
+                        spdlog::warn("No quotes for Uniswap");
                         return false;
                     }
                 } else {
@@ -687,7 +600,93 @@ bool Streaming::loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &q
         }
         return true;
     } catch (std::exception &e) {
-        spdlog::error("PancakeSwap subgraph parse error: {}", e.what());
+        spdlog::error("Uniswap subgraph parse error: {}", e.what());
+    }
+    return false;
+}
+
+bool Streaming::loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quotes,
+                                    std::unordered_map<std::string, std::vector<Quotes>> &connections) {
+    try {
+        rapidjson::Document document;
+        std::string url = "/subgraphs/name/croco-finance/sushiswap";
+        std::string data = R"({ "query": "{ pairs( first: 1000, orderBy: reserveETH, orderDirection: desc ) { token0{ id symbol name decimals derivedETH } token1{ id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
+
+        auto res = graphRequest_->Post(url.c_str(), data, "application/json");
+        if (res == nullptr) {
+            spdlog::error("Sushiswap subgraph error: {}", "nullptr");
+            return false;
+        }
+
+        if (res.error()) {
+            spdlog::error("Sushiswap subgraph error: {}", res.error());
+            return false;
+        }
+
+        // Parse the JSON
+        if (document.Parse(res->body.c_str()).HasParseError()) {
+            spdlog::error("Sushiswap subgraph document parse error: {}", res->body.c_str());
+            return false;
+        }
+
+        if (!document.IsObject()) {
+            spdlog::error("Sushiswap subgraph  error: {}", "No data");
+            return false;
+        }
+
+        // Put the data int the struct
+        if (document.HasMember("data")) {
+            if (document["data"].HasMember("pairs")) {
+                if (document["data"]["pairs"].IsArray()) {
+                    const rapidjson::Value &pairs = document["data"]["pairs"];
+                    for (rapidjson::SizeType i = 0; i < pairs.Size(); i++) {
+                        Quotes quote;
+                        quote.id = sole::uuid4().str();
+                        quote.protocol = "SUSHISWAP";
+                        quote.poolID = pairs[i]["id"].GetString();
+
+                        // Token 0
+                        quote.token0Symbol = pairs[i]["token0"]["symbol"].GetString();
+                        quote.token0decimals = std::stoi(
+                                pairs[i]["token0"]["decimals"].GetString());
+                        quote.token0Address = pairs[i]["token0"]["id"].GetString();
+                        quote.token0Price =
+                                std::stod(pairs[i]["token0Price"].GetString());
+
+                        // Token 1
+                        quote.token1Symbol = pairs[i]["token1"]["symbol"].GetString();
+                        quote.token1decimals = std::stoi(
+                                pairs[i]["token1"]["decimals"].GetString());
+                        quote.token1Address = pairs[i]["token1"]["id"].GetString();
+                        quote.token1Price =
+                                std::stod(pairs[i]["token1Price"].GetString());
+
+                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
+                            spdlog::warn("Sushiswap problem with pair: {}", quote.poolID);
+                            continue;
+                        }
+
+                        // Unique ID
+                        quotes[quote.id] = quote;
+                        connections[quote.protocol + "_" + quote.token1Address].emplace_back(quote);
+                        connections[quote.protocol + "_" + quote.token0Address].emplace_back(quote);
+                    }
+                    if (quotes.empty()) {
+                        spdlog::warn("No quotes for sushiswap");
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        return true;
+    } catch (std::exception &e) {
+        spdlog::error("Sushiswap subgraph parse error: {}", e.what());
     }
     return false;
 }

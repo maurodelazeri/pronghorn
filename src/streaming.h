@@ -51,16 +51,15 @@ class Streaming {
 private:
     bool system_debug_;
 
-    double initial_volume_ = 0.005;
+    double initial_volume_ = 1;
 
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;
-    std::unique_ptr<httplib::Client> graphRequest_;
-    std::unique_ptr<httplib::SSLClient> graphDelayRequest_;
+    std::unique_ptr<httplib::SSLClient> graphRequest_;
 
-    bool loadPancakeSwapPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
+    bool loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
 
-    bool loadPancakeSwapDelayPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
+    bool loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quotes,std::unordered_map<std::string, std::vector<Quotes>> &connections);
 
     void runCycle();
 
