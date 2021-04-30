@@ -193,9 +193,11 @@ void Streaming::runCycle() {
 
     // Load the data
     if (!loadUniSwapPrices(quotes, connections)) {
+        spdlog::error("Problem loading uniswap prices");
         return;
     }
     if (!loadSushiSwapPrices(quotes, connections)) {
+        spdlog::error("Problem loading sushiswap prices");
         return;
     }
 
@@ -379,13 +381,14 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
             if (document.HasMember("profit")) {
                 const rapidjson::Value &profit = document["profit"];
-                   if (final_profit < profit.GetDouble()) {
-                final_profit = profit.GetDouble();
-                execution_json = sb.GetString();
-                execution_index = current_index;
+                cout << profit.GetDouble() << endl;
+                if (final_profit < profit.GetDouble()) {
+                    final_profit = profit.GetDouble();
+                    execution_json = sb.GetString();
+                    execution_index = current_index;
 
-                executeArbitrage(arbitrages[execution_index], execution_json);
-                   }
+                    executeArbitrage(arbitrages[execution_index], execution_json);
+                }
             }
             current_index++;
         }
@@ -541,6 +544,11 @@ bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quote
             spdlog::error("Uniswap subgraph error: {}", "No data");
             return false;
         }
+
+        rapidjson::StringBuffer sb;
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+        document.Accept(writer);    // Accept() traverses the DOM and generates Handler events.
+        puts(sb.GetString());
 
         // Put the data int the struct
         if (document.HasMember("data")) {
