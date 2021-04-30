@@ -195,9 +195,9 @@ void Streaming::runCycle() {
     if (!loadUniSwapPrices(quotes, connections)) {
         return;
     }
-//    if (!loadSushiSwapPrices(quotes, connections)) {
-//        return;
-//    }
+    if (!loadSushiSwapPrices(quotes, connections)) {
+        return;
+    }
 
     // Map unique addrs across all platforms
     int position = 0;
@@ -268,10 +268,9 @@ void Streaming::runCycle() {
             hash[executionhash] = true;
             arbitrage.output = output;
 
-            //cout << output << endl;
-
-            // Only if starts with WETH
-            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c") {
+            // Only if starts with WETH - kovan and mainnet
+            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
+                arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
                 arbitrages.emplace_back(arbitrage);
             }
 
@@ -380,13 +379,13 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
             if (document.HasMember("profit")) {
                 const rapidjson::Value &profit = document["profit"];
-                //   if (final_profit < profit.GetDouble()) {
+                   if (final_profit < profit.GetDouble()) {
                 final_profit = profit.GetDouble();
                 execution_json = sb.GetString();
                 execution_index = current_index;
 
                 executeArbitrage(arbitrages[execution_index], execution_json);
-                //  }
+                   }
             }
             current_index++;
         }
@@ -517,10 +516,9 @@ bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quote
     try {
         rapidjson::Document document;
 
-        //std::string url = "/subgraphs/name/uniswap/uniswap-v2";
-        std::string url = "/subgraphs/name/maurodelazeri/uniswapv2-kovan";
-
-        std::string data = R"({ "query": "{ pairs( first: 1000, orderBy: reserveETH, orderDirection: desc ) { token0{ id symbol name decimals derivedETH } token1{ id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
+        std::string url = "/subgraphs/name/uniswap/uniswap-v2";
+        //std::string url = "/subgraphs/name/maurodelazeri/uniswapv2-kovan";
+        std::string data = R"({ "query": "{ pairs(first: 1000, where: {reserveUSD_gt: '10000', volumeUSD_gt: '5000'}, orderBy: reserveUSD, orderDirection: desc) { token0 { id symbol name decimals derivedETH } token1 { id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
@@ -610,7 +608,7 @@ bool Streaming::loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quo
     try {
         rapidjson::Document document;
         std::string url = "/subgraphs/name/croco-finance/sushiswap";
-        std::string data = R"({ "query": "{ pairs( first: 1000, orderBy: reserveETH, orderDirection: desc ) { token0{ id symbol name decimals derivedETH } token1{ id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
+        std::string data = R"({ "query": "{ pairs(first: 1000, where: {reserveUSD_gt: '10000', volumeUSD_gt: '5000'}, orderBy: reserveUSD, orderDirection: desc) { token0 { id symbol name decimals derivedETH } token1 { id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
@@ -661,10 +659,10 @@ bool Streaming::loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quo
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
 
-                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
-                            spdlog::warn("Sushiswap problem with pair: {}", quote.poolID);
-                            continue;
-                        }
+//                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
+//                            spdlog::warn("Sushiswap problem with pair: {}", quote.poolID);
+//                            continue;
+//                        }
 
                         // Unique ID
                         quotes[quote.id] = quote;
