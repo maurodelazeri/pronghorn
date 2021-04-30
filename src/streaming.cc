@@ -252,6 +252,11 @@ void Streaming::runCycle() {
                 output.append(m2);
                 free(m2);
 
+                if (arbitrage.currency_return.empty()){
+                    arbitrage.currency_return = edges.top()->asset_from().symbol;
+                    arbitrage.decimal_base = edges.top()->asset_from().decimals;
+                }
+
                 arbitrage.addr.emplace_back(edges.top()->asset_from().address);
                 arbitrage.addr.emplace_back(edges.top()->asset_to().address);
                 arbitrage.exchange.emplace_back(edges.top()->asset_to().protocol);
@@ -271,10 +276,10 @@ void Streaming::runCycle() {
             arbitrage.output = output;
 
             // Only if starts with WETH - kovan and mainnet
-            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
-                arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
-                arbitrages.emplace_back(arbitrage);
-            }
+            // if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
+            //     arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
+            arbitrages.emplace_back(arbitrage);
+            //   }
 
             //cout << output << endl;
         } else {
@@ -340,6 +345,14 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             val.SetDouble(initial_volume_);
             request_document.AddMember("starting_volume", val, allocator);
 
+            val.SetInt64(arb.decimal_base);
+            request_document.AddMember("decimal_base", val, allocator);
+
+            val.SetString(arb.currency_return.c_str(),
+                          static_cast<rapidjson::SizeType>(arb.currency_return.length()),
+                          allocator);
+            request_document.AddMember("currency_return", val, allocator);
+
             rapidjson::StringBuffer sb;
             rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
             request_document.Accept(writer);
@@ -381,13 +394,10 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
             if (document.HasMember("profit")) {
                 const rapidjson::Value &profit = document["profit"];
-                cout << profit.GetDouble() << endl;
                 if (final_profit < profit.GetDouble()) {
                     final_profit = profit.GetDouble();
                     execution_json = sb.GetString();
                     execution_index = current_index;
-
-                    executeArbitrage(arbitrages[execution_index], execution_json);
                 }
             }
             current_index++;
@@ -395,46 +405,9 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
 
         if (final_profit > 0) {
             spdlog::info("Profitable operation found {}", final_profit);
-
-            if (arbitrages[execution_index].exchange.size() == 2) {
-                final_profit -= 0.00182082;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 3) {
-                final_profit -= 0.00313629;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 4) {
-                final_profit -= 0.00399482;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 5) {
-                final_profit -= 0.0047071;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else if (arbitrages[execution_index].exchange.size() == 6) {
-                final_profit -= 0.00525459;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-                final_profit -= initial_volume_ * 0.003;
-            } else {
-                spdlog::info("Execution has more than 6 hoops, we are not handling it");
-                return;
-            }
-
             if (final_profit > 0) {
                 spdlog::info("Operation payload {}", arbitrages[execution_index].output);
-                spdlog::info("Sending execution expecting {} BNB in returns.", final_profit);
-                cout << execution_json << endl;
+                spdlog::info("Sending execution and expecting {} {}.", final_profit, arbitrages[execution_index].currency_return);
                 executeArbitrage(arbitrages[execution_index], execution_json);
             } else {
                 spdlog::info("No Profitable profits profits after fees");
@@ -453,7 +426,6 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
             spdlog::error("Nothing to execute trade json is empty");
             return;
         }
-        cout << execution_json << endl;
 
         std::string url = "/trade";
         auto res = nodeRequest_->Post(url.c_str(), execution_json, "application/json");
@@ -491,6 +463,11 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
             return;
         }
 
+//        rapidjson::StringBuffer sb;
+//        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+//        document.Accept(writer);    // Accept() traverses the DOM and generates Handler events.
+//        puts(sb.GetString());
+
         if (document.HasMember("executed")) {
             const rapidjson::Value &executed = document["executed"];
             if (executed.GetBool()) {
@@ -499,13 +476,23 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
                     const rapidjson::Value &profit = document["profit"];
                     spdlog::info("Trade executed: transactionHash: {} Profit: {}", transactionHash.GetString(),
                                  profit.GetDouble());
-
                     std::ofstream out;
                     auto givemetime = chrono::system_clock::to_time_t(chrono::system_clock::now());
                     out.open("/opt/executions.log", std::ios::app);
                     out << "-----------------------------------\n";
-                    out << ctime(&givemetime) << "Transaction Hash: " << transactionHash.GetString() << "\n"
-                        << "Profit: " << profit.GetDouble();
+                    out << ctime(&givemetime) << "Transaction Hash: " << transactionHash.GetDouble() << "\n"
+                        << "Profit: " << profit.GetDouble() << " " << arbitrage.currency_return;
+                } else if (document.HasMember("fake")) {
+                    const rapidjson::Value &profit = document["profit"];
+                    const rapidjson::Value &volume = document["volume"];
+                    spdlog::info("Fake trade executed: Volume: {} Profit: {}", volume.GetDouble(),
+                                 profit.GetDouble());
+                    std::ofstream out;
+                    auto givemetime = chrono::system_clock::to_time_t(chrono::system_clock::now());
+                    out.open("/opt/executions.log", std::ios::app);
+                    out << "-----------------------------------\n";
+                    out << ctime(&givemetime) << "Fake Trade executed Volume: " << volume.GetDouble() << "\n"
+                        << "Profit: " << profit.GetDouble() << " " << arbitrage.currency_return << "\n\n " << execution_json << "\n\n";
                 }
             }
         }
@@ -521,7 +508,7 @@ bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quote
 
         std::string url = "/subgraphs/name/uniswap/uniswap-v2";
         //std::string url = "/subgraphs/name/maurodelazeri/uniswapv2-kovan";
-        std::string data = R"({ "query": "{ pairs(first: 1000, where: {reserveUSD_gt: '10000', volumeUSD_gt: '5000'}, orderBy: reserveUSD, orderDirection: desc) { token0 { id symbol name decimals derivedETH } token1 { id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
+        std::string data = R"({ "query": "{ pairs(first: 1000, where: {reserveUSD_gt: 10000, volumeUSD_gt: 5000}, orderBy: reserveUSD, orderDirection: desc) { token0 { id symbol name decimals derivedETH } token1 { id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {
@@ -544,11 +531,6 @@ bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quote
             spdlog::error("Uniswap subgraph error: {}", "No data");
             return false;
         }
-
-        rapidjson::StringBuffer sb;
-        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-        document.Accept(writer);    // Accept() traverses the DOM and generates Handler events.
-        puts(sb.GetString());
 
         // Put the data int the struct
         if (document.HasMember("data")) {
@@ -616,7 +598,7 @@ bool Streaming::loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quo
     try {
         rapidjson::Document document;
         std::string url = "/subgraphs/name/croco-finance/sushiswap";
-        std::string data = R"({ "query": "{ pairs(first: 1000, where: {reserveUSD_gt: '10000', volumeUSD_gt: '5000'}, orderBy: reserveUSD, orderDirection: desc) { token0 { id symbol name decimals derivedETH } token1 { id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
+        std::string data = R"({ "query": "{ pairs(first: 1000, where: {reserveUSD_gt: 10000, volumeUSD_gt: 5000}, orderBy: reserveUSD, orderDirection: desc) { token0 { id symbol name decimals derivedETH } token1 { id symbol name decimals derivedETH } id reserve0 reserve1 token0Price token1Price reserveETH reserveUSD volumeUSD } }"})";
 
         auto res = graphRequest_->Post(url.c_str(), data, "application/json");
         if (res == nullptr) {

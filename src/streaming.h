@@ -36,11 +36,11 @@ struct Quotes {
     int64_t token1decimals;
     double token0Price;
     double token1Price;
-    double token0derivedBNB;
-    double token1derivedBNB;
 };
 
 struct Arbitrage {
+    std::string currency_return;
+    int64_t decimal_base;
     std::vector<std::string> addr;
     std::vector<std::string> exchange;
     std::vector<std::string> pool;
@@ -51,7 +51,7 @@ class Streaming {
 private:
     bool system_debug_;
 
-    double initial_volume_ = 1;
+    double initial_volume_ = 0.1;
 
     httplib::Server server_;
     std::unique_ptr<httplib::Client> nodeRequest_;

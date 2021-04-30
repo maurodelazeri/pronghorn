@@ -4,16 +4,16 @@
 using namespace std;
 
 int main() {
-    spdlog::info("Build generated: {} {}", __DATE__, __TIME__);
-
     cout << "\n"
             "██████  ██████   ██████  ███    ██  ██████  ██   ██  ██████  ██████  ███    ██ \n"
             "██   ██ ██   ██ ██    ██ ████   ██ ██       ██   ██ ██    ██ ██   ██ ████   ██ \n"
             "██████  ██████  ██    ██ ██ ██  ██ ██   ███ ███████ ██    ██ ██████  ██ ██  ██ \n"
             "██      ██   ██ ██    ██ ██  ██ ██ ██    ██ ██   ██ ██    ██ ██   ██ ██  ██ ██ \n"
             "██      ██   ██  ██████  ██   ████  ██████  ██   ██  ██████  ██   ██ ██   ████ \n"
-            "                                                                               \n";
+            "                                                                               \n\n";
 
+
+    spdlog::info("Build generated: {} {}", __DATE__, __TIME__);
 
     std::unique_ptr<Streaming> stream = std::make_unique<Streaming>();
     stream->start();
