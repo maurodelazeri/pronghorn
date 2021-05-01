@@ -130,6 +130,7 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
                 asset_0.protocol = x.protocol;
                 asset_0.poolID = x.poolID;
                 asset_0.decimals = x.token0decimals;
+                asset_0.derivedETH = x.token0derivedETH;
 
                 Asset asset_1;
                 asset_1.quoteId = x.id;
@@ -138,6 +139,7 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
                 asset_1.protocol = x.protocol;
                 asset_1.poolID = x.poolID;
                 asset_1.decimals = x.token1decimals;
+                asset_1.derivedETH = x.token1derivedETH;
 
                 connections_mapping[key] = true;
 
@@ -161,6 +163,7 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
                 asset_0.protocol = x.protocol;
                 asset_0.poolID = x.poolID;
                 asset_0.decimals = x.token0decimals;
+                asset_0.derivedETH = x.token0derivedETH;
 
                 Asset asset_1;
                 asset_1.quoteId = x.id;
@@ -169,6 +172,7 @@ void Streaming::buildEdgeWeightedDigraph(std::vector<DirectedEdge *> &directedEd
                 asset_1.protocol = x.protocol;
                 asset_1.poolID = x.poolID;
                 asset_1.decimals = x.token1decimals;
+                asset_1.derivedETH = x.token1derivedETH;
 
                 connections_mapping[key] = true;
 
@@ -255,6 +259,7 @@ void Streaming::runCycle() {
                 if (arbitrage.currency_return.empty()) {
                     arbitrage.currency_return = edges.top()->asset_from().symbol;
                     arbitrage.decimal_base = edges.top()->asset_from().decimals;
+                    arbitrage.derivedETH = edges.top()->asset_from().derivedETH;
                 }
 
                 arbitrage.addr.emplace_back(edges.top()->asset_from().address);
@@ -276,10 +281,11 @@ void Streaming::runCycle() {
             arbitrage.output = output;
 
             // Only if starts with WETH - kovan and mainnet
-            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
-                arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
-                arbitrages.emplace_back(arbitrage);
-            }
+//            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
+//                arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
+//                arbitrages.emplace_back(arbitrage);
+//            }
+            arbitrages.emplace_back(arbitrage);
 
             //cout << output << endl;
         } else {
@@ -301,8 +307,10 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
         spdlog::info("{} Opportunities found, sending it over to further check", arbitrages.size());
 
         double final_profit = 0.0;
+        double final_profit_ETH = 0.0;
         int current_index = 0;
         int execution_index = 0;
+        double optimal_volume = 0;
         std::string execution_json;
 
         for (auto const &arb : arbitrages) {
@@ -353,6 +361,9 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
                           allocator);
             request_document.AddMember("currency_return", val, allocator);
 
+            val.SetDouble(arb.derivedETH);
+            request_document.AddMember("derivedETH", val, allocator);
+
             rapidjson::StringBuffer sb;
             rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
             request_document.Accept(writer);
@@ -394,8 +405,12 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             }
             if (document.HasMember("profit")) {
                 const rapidjson::Value &profit = document["profit"];
-                if (final_profit < profit.GetDouble()) {
+                const rapidjson::Value &optimalVol = document["optimal_volume"];
+
+                if (final_profit_ETH < profit.GetDouble()) {
                     final_profit = profit.GetDouble();
+                    final_profit_ETH = profit.GetDouble() / arbitrages[current_index].derivedETH;
+                    optimal_volume = optimalVol.GetDouble();
                     execution_json = sb.GetString();
                     execution_index = current_index;
                 }
@@ -403,13 +418,32 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             current_index++;
         }
 
+        spdlog::info("Simulation check finished");
+
         if (final_profit > 0) {
             spdlog::info("Profitable operation found {}", final_profit);
             if (final_profit > 0) {
-                spdlog::info("Operation payload {}", arbitrages[execution_index].output);
-                spdlog::info("Sending execution and expecting {} {}.", final_profit,
-                             arbitrages[execution_index].currency_return);
-                executeArbitrage(arbitrages[execution_index], execution_json);
+                rapidjson::Document trade_doc;
+                if (trade_doc.Parse(execution_json.c_str()).HasParseError()) {
+                    spdlog::error("Trade doc parse error: {}", execution_json);
+                    return;
+                }
+                if (!trade_doc.IsObject()) {
+                    spdlog::error("Trade doc error: {}", "No data");
+                    return;
+                }
+
+                trade_doc["starting_volume"] = optimal_volume;
+
+                rapidjson::StringBuffer sb;
+                rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
+                trade_doc.Accept(writer);
+
+                spdlog::info("Operation payload {}", sb.GetString());
+                spdlog::info("Sending execution and expecting {} {} equivalent to {} ETH.", final_profit,
+                             arbitrages[execution_index].currency_return, final_profit_ETH);
+
+                executeArbitrage(arbitrages[execution_index], sb.GetString());
             } else {
                 spdlog::info("No Profitable profits profits after fees");
             }
@@ -463,11 +497,6 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
             spdlog::error("Node api return does not contain a error status");
             return;
         }
-
-//        rapidjson::StringBuffer sb;
-//        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-//        document.Accept(writer);    // Accept() traverses the DOM and generates Handler events.
-//        puts(sb.GetString());
 
         if (document.HasMember("executed")) {
             const rapidjson::Value &executed = document["executed"];
@@ -552,6 +581,7 @@ bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quote
                         quote.token0Address = pairs[i]["token0"]["id"].GetString();
                         quote.token0Price =
                                 std::stod(pairs[i]["token0Price"].GetString());
+                        quote.token0derivedETH = std::stod(pairs[i]["token0"]["derivedETH"].GetString());
 
                         // Token 1
                         quote.token1Symbol = pairs[i]["token1"]["symbol"].GetString();
@@ -560,6 +590,7 @@ bool Streaming::loadUniSwapPrices(std::unordered_map<std::string, Quotes> &quote
                         quote.token1Address = pairs[i]["token1"]["id"].GetString();
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
+                        quote.token1derivedETH = std::stod(pairs[i]["token1"]["derivedETH"].GetString());
 
                         if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
                             rapidjson::StringBuffer sb;
@@ -642,6 +673,7 @@ bool Streaming::loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quo
                         quote.token0Address = pairs[i]["token0"]["id"].GetString();
                         quote.token0Price =
                                 std::stod(pairs[i]["token0Price"].GetString());
+                        quote.token0derivedETH = std::stod(pairs[i]["token0"]["derivedETH"].GetString());
 
                         // Token 1
                         quote.token1Symbol = pairs[i]["token1"]["symbol"].GetString();
@@ -650,6 +682,7 @@ bool Streaming::loadSushiSwapPrices(std::unordered_map<std::string, Quotes> &quo
                         quote.token1Address = pairs[i]["token1"]["id"].GetString();
                         quote.token1Price =
                                 std::stod(pairs[i]["token1Price"].GetString());
+                        quote.token1derivedETH = std::stod(pairs[i]["token1"]["derivedETH"].GetString());
 
 //                        if (quote.token0Symbol.empty() || quote.token1Symbol.empty()) {
 //                            spdlog::warn("Sushiswap problem with pair: {}", quote.poolID);

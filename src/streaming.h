@@ -36,11 +36,14 @@ struct Quotes {
     int64_t token1decimals;
     double token0Price;
     double token1Price;
+    double token0derivedETH;
+    double token1derivedETH;
 };
 
 struct Arbitrage {
     std::string currency_return;
     int64_t decimal_base;
+    double derivedETH;
     std::vector<std::string> addr;
     std::vector<std::string> exchange;
     std::vector<std::string> pool;

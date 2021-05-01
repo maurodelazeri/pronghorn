@@ -11,4 +11,5 @@ struct Asset {
     std::string symbol{};
     std::string address{};
     int64_t decimals{};
+    double derivedETH;
 };
