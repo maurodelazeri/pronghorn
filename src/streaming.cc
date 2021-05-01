@@ -252,7 +252,7 @@ void Streaming::runCycle() {
                 output.append(m2);
                 free(m2);
 
-                if (arbitrage.currency_return.empty()){
+                if (arbitrage.currency_return.empty()) {
                     arbitrage.currency_return = edges.top()->asset_from().symbol;
                     arbitrage.decimal_base = edges.top()->asset_from().decimals;
                 }
@@ -276,10 +276,10 @@ void Streaming::runCycle() {
             arbitrage.output = output;
 
             // Only if starts with WETH - kovan and mainnet
-            // if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
-            //     arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
-            arbitrages.emplace_back(arbitrage);
-            //   }
+            if (arbitrage.addr[0] == "0xd0a1e359811322d97991e03f863a0c30c2cf029c" ||
+                arbitrage.addr[0] == "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2") {
+                arbitrages.emplace_back(arbitrage);
+            }
 
             //cout << output << endl;
         } else {
@@ -407,7 +407,8 @@ void Streaming::simulateArbitrage(const std::vector<Arbitrage> &arbitrages) {
             spdlog::info("Profitable operation found {}", final_profit);
             if (final_profit > 0) {
                 spdlog::info("Operation payload {}", arbitrages[execution_index].output);
-                spdlog::info("Sending execution and expecting {} {}.", final_profit, arbitrages[execution_index].currency_return);
+                spdlog::info("Sending execution and expecting {} {}.", final_profit,
+                             arbitrages[execution_index].currency_return);
                 executeArbitrage(arbitrages[execution_index], execution_json);
             } else {
                 spdlog::info("No Profitable profits profits after fees");
@@ -492,7 +493,8 @@ void Streaming::executeArbitrage(const Arbitrage &arbitrage, const std::string &
                     out.open("/opt/executions.log", std::ios::app);
                     out << "-----------------------------------\n";
                     out << ctime(&givemetime) << "Fake Trade executed Volume: " << volume.GetDouble() << "\n"
-                        << "Profit: " << profit.GetDouble() << " " << arbitrage.currency_return << "\n\n " << execution_json << "\n\n";
+                        << "Profit: " << profit.GetDouble() << " " << arbitrage.currency_return << "\n\n "
+                        << execution_json << "\n\n";
                 }
             }
         }
